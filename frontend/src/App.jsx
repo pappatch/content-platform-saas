@@ -4,6 +4,7 @@ import Login from './pages/Login'
 
 import AdminLayout from './apps/admin/AdminLayout'
 import AdminDashboard from './apps/admin/Dashboard'
+import AdminSites from './apps/admin/Sites'
 
 import CmsLayout from './apps/cms/CmsLayout'
 import CmsDashboard from './apps/cms/Dashboard'
@@ -26,7 +27,7 @@ export default function App() {
         }
       >
         <Route index element={<AdminDashboard />} />
-        {/* Future: sites, users, analytics routes */}
+        <Route path="sites" element={<AdminSites />} />
       </Route>
 
       {/* CMS app — editor or admin */}
