@@ -1,14 +1,14 @@
+import enum
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Text, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
-import enum
 from app.database import Base
 
 
 class ArticleStatus(enum.Enum):
-    pending = "pending"       # נסרק, ממתין ל-AI review
-    published = "published"   # פורסם אוטומטית
-    removed = "removed"       # הוסר ע"י עורך
+    pending = "pending"       # scraped, awaiting AI review
+    published = "published"   # auto-published
+    removed = "removed"       # removed by editor
 
 
 class Article(Base):
@@ -17,12 +17,12 @@ class Article(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     body = Column(Text, nullable=False)
-    source_url = Column(String, unique=True, index=True)  # למניעת כפילויות
+    source_url = Column(String, unique=True, index=True)
     status = Column(Enum(ArticleStatus), default=ArticleStatus.pending)
 
     # AI Review
-    ai_score = Column(Float, nullable=True)       # 0.0 עד 1.0
-    ai_flags = Column(String, nullable=True)      # הערות AI כ-JSON string
+    ai_score = Column(Float, nullable=True)
+    ai_flags = Column(String, nullable=True)
 
     # SEO Enrichment
     seo_title = Column(String, nullable=True)
@@ -32,15 +32,16 @@ class Article(Base):
 
     # Editorial
     is_pinned = Column(Boolean, default=False)
-    pin_order = Column(Integer, nullable=True)    # סדר הצגה במוצמדים
+    pin_order = Column(Integer, nullable=True)
 
-    # קשרים
     site_id = Column(Integer, ForeignKey("sites.id"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
-    editor_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # מי ערך
+    editor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 
     site = relationship("Site", back_populates="articles")
     category = relationship("Category", back_populates="articles")
+    editor = relationship("User", back_populates="articles")
+    analytics_events = relationship("Analytics", back_populates="article")
 
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),

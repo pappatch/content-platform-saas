@@ -1,0 +1,50 @@
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from app.database import get_db
+from app.models.scrape_job import ScrapeJob
+from app.models.user import User
+from app.schemas.scrape_job import ScrapeJobCreate, ScrapeJobResponse
+from app.security.permissions import get_current_user, require_admin
+
+router = APIRouter(prefix="/scraper/jobs", tags=["Scraper"])
+
+
+@router.get("", response_model=List[ScrapeJobResponse])
+def list_jobs(
+    site_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    query = db.query(ScrapeJob)
+    if site_id is not None:
+        query = query.filter(ScrapeJob.site_id == site_id)
+    return query.order_by(ScrapeJob.created_at.desc()).all()
+
+
+@router.get("/{job_id}", response_model=ScrapeJobResponse)
+def get_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scrape job not found")
+    return job
+
+
+@router.post("", response_model=ScrapeJobResponse, status_code=status.HTTP_201_CREATED)
+def create_job(
+    job_data: ScrapeJobCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    job = ScrapeJob(
+        site_id=job_data.site_id,
+        url=str(job_data.url),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job

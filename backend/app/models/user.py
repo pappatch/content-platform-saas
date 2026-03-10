@@ -1,7 +1,7 @@
+import enum
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
-import enum
 from app.database import Base
 
 
@@ -24,5 +24,4 @@ class User(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
 
-    # קשרים לטבלאות אחרות — נוסיף בהמשך
-    # articles = relationship("Article", back_populates="editor")
+    articles = relationship("Article", back_populates="editor")
