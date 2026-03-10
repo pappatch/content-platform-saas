@@ -14,6 +14,7 @@ from app.routes.cms.categories import router as categories_router
 from app.routes.scraper.jobs import router as scraper_router
 from app.routes.admin.analytics import router as analytics_router
 from app.workers.scrape_worker import worker_loop
+from app.workers.review_worker import review_worker_loop
 import app.models
 
 logger = logging.getLogger(__name__)
@@ -23,16 +24,19 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    worker_task = asyncio.create_task(worker_loop())
+    scrape_task = asyncio.create_task(worker_loop())
+    review_task = asyncio.create_task(review_worker_loop())
     logger.info("Application startup complete")
     try:
         yield
     finally:
-        worker_task.cancel()
-        try:
-            await worker_task
-        except asyncio.CancelledError:
-            pass
+        scrape_task.cancel()
+        review_task.cancel()
+        for task in (scrape_task, review_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         logger.info("Application shutdown complete")
 
 

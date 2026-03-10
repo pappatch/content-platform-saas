@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -19,6 +20,7 @@ class Settings(BaseSettings):
 
     # AI Review
     ai_review_threshold: float = 0.7
+    anthropic_api_key: Optional[str] = None
 
     class Config:
         env_file = ".env"
