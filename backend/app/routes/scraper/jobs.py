@@ -43,7 +43,8 @@ def create_job(
 ):
     job = ScrapeJob(
         site_id=job_data.site_id,
-        url=str(job_data.url),
+        keywords=job_data.keywords,
+        language=job_data.language,
         frequency_minutes=job_data.frequency_minutes,
         category_rules=job_data.category_rules,
     )
@@ -83,7 +84,6 @@ def run_job(
             detail="Job is already running",
         )
     background_tasks.add_task(scrape_and_save, job_id)
-    # Optimistically reflect the queued state in the response
     job.status = ScrapeJobStatus.running
     db.commit()
     db.refresh(job)

@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     ai_review_threshold: float = 0.7
     anthropic_api_key: Optional[str] = None
 
+    # Search providers — set in .env, never hardcode
+    tavily_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    google_cse_id: Optional[str] = None
+
     class Config:
         env_file = ".env"
 

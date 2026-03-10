@@ -1,17 +1,26 @@
 """
-Scraper service — async HTML fetching, parsing, language detection, and article persistence.
+Scraper service — keyword-based search using Tavily (primary) and Google Custom
+Search (secondary), full-content fetch via httpx, and article persistence.
+
+Search flow
+-----------
+1. For each job run, query Tavily and Google CSE concurrently using the job keywords
+2. Merge and deduplicate results by URL (Tavily wins on duplicates — higher score)
+3. Fetch full HTML for each candidate URL (SSRF-protected, rate-limited per domain)
+4. Parse title + body, detect language
+5. Save new Articles with status=pending; ai_score populated from Tavily relevance
 
 Security guarantees
 -------------------
+- API keys loaded from environment only, never logged
 - URL scheme restricted to http / https
 - Hostname resolved to IP before request; all RFC-1918, loopback, link-local,
   and ULA IPv6 ranges are blocked (SSRF protection)
 - Rate-limited to RATE_LIMIT_SECONDS per domain (in-process)
-- All exceptions are caught, logged, and never propagated to API callers
+- At most MAX_SEARCHES_PER_JOB candidate URLs processed per run
 """
 
 import asyncio
-import hashlib
 import ipaddress
 import logging
 import re
@@ -20,10 +29,11 @@ import time
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 from typing import Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.models.article import Article, ArticleStatus
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
@@ -37,6 +47,14 @@ logger = logging.getLogger(__name__)
 RATE_LIMIT_SECONDS: float = 2.0
 FETCH_TIMEOUT_SECONDS: float = 15.0
 MAX_BODY_BYTES: int = 5 * 1024 * 1024  # 5 MB
+
+# Max candidate URLs to fetch & save per job run
+MAX_SEARCHES_PER_JOB: int = 10
+
+# Results requested from each search provider
+TAVILY_MAX_RESULTS: int = 7
+GOOGLE_MAX_RESULTS: int = 5
+
 REQUEST_HEADERS = {
     "User-Agent": (
         "ContentPlatformBot/1.0 (+https://github.com/pappatch/content-platform)"
@@ -100,20 +118,133 @@ async def validate_url(url: str) -> str:
     if not host:
         raise ValueError("URL has no hostname")
 
-    # Resolve in a thread so we don't block the event loop
     try:
         addr_infos = await asyncio.to_thread(socket.getaddrinfo, host, None)
     except socket.gaierror as exc:
         raise ValueError(f"Cannot resolve hostname {host!r}: {exc}") from exc
 
     for *_, sockaddr in addr_infos:
-        ip_str = sockaddr[0]
-        if _is_private_ip(ip_str):
+        if _is_private_ip(sockaddr[0]):
             raise ValueError(
-                f"URL resolves to a private/internal address and cannot be fetched"
+                "URL resolves to a private/internal address and cannot be fetched"
             )
 
     return url
+
+
+# ---------------------------------------------------------------------------
+# Search providers
+# ---------------------------------------------------------------------------
+
+async def _tavily_search(keywords: list[str], language: str) -> list[dict]:
+    """
+    Search Tavily with the combined keyword query.
+    Returns list of {url, title, snippet, score, source}.
+    Silently returns [] if API key is missing or the call fails.
+    """
+    settings = get_settings()
+    if not settings.tavily_api_key:
+        logger.warning("TAVILY_API_KEY not configured — skipping Tavily search")
+        return []
+
+    query = " ".join(keywords)
+
+    def _sync() -> list:
+        from tavily import TavilyClient
+        client = TavilyClient(api_key=settings.tavily_api_key)
+        resp = client.search(
+            query=query,
+            search_depth="advanced",
+            max_results=TAVILY_MAX_RESULTS,
+            include_raw_content=False,
+        )
+        return resp.get("results", [])
+
+    try:
+        raw = await asyncio.to_thread(_sync)
+        return [
+            {
+                "url": r.get("url", ""),
+                "title": r.get("title", ""),
+                "snippet": r.get("content", ""),
+                "score": float(r.get("score", 0.0)),
+                "source": "tavily",
+            }
+            for r in raw
+            if r.get("url")
+        ]
+    except Exception as exc:
+        logger.warning("Tavily search failed (%s: %s)", type(exc).__name__, exc)
+        return []
+
+
+async def _google_search(keywords: list[str], language: str) -> list[dict]:
+    """
+    Search Google Custom Search Engine with the combined keyword query.
+    Returns list of {url, title, snippet, score=0.0, source}.
+    Silently returns [] if API keys are missing or the call fails.
+    """
+    settings = get_settings()
+    if not settings.google_api_key or not settings.google_cse_id:
+        logger.warning(
+            "GOOGLE_API_KEY / GOOGLE_CSE_ID not configured — skipping Google search"
+        )
+        return []
+
+    query = " ".join(keywords)
+    lr_param = f"lang_{language}" if language in ("en", "fr", "he", "ar") else "lang_en"
+
+    def _sync() -> list:
+        from googleapiclient.discovery import build as google_build
+        service = google_build(
+            "customsearch",
+            "v1",
+            developerKey=settings.google_api_key,
+            cache_discovery=False,  # avoids a discovery endpoint network call on each use
+        )
+        result = (
+            service.cse()
+            .list(q=query, cx=settings.google_cse_id, num=GOOGLE_MAX_RESULTS, lr=lr_param)
+            .execute()
+        )
+        return result.get("items", [])
+
+    try:
+        raw = await asyncio.to_thread(_sync)
+        return [
+            {
+                "url": item.get("link", ""),
+                "title": item.get("title", ""),
+                "snippet": item.get("snippet", ""),
+                "score": 0.0,
+                "source": "google",
+            }
+            for item in raw
+            if item.get("link")
+        ]
+    except Exception as exc:
+        logger.warning("Google CSE search failed (%s: %s)", type(exc).__name__, exc)
+        return []
+
+
+def _merge_results(tavily: list[dict], google: list[dict]) -> list[dict]:
+    """
+    Merge Tavily + Google results, deduplicating by normalised URL.
+    Tavily entries take precedence when the same URL appears in both.
+    Returns at most MAX_SEARCHES_PER_JOB entries.
+    """
+    seen: set[str] = set()
+    merged: list[dict] = []
+
+    for item in tavily + google:
+        key = item["url"].rstrip("/").lower()
+        if key and key not in seen:
+            seen.add(key)
+            merged.append(item)
+        if len(merged) >= MAX_SEARCHES_PER_JOB:
+            break
+
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -121,7 +252,7 @@ async def validate_url(url: str) -> str:
 # ---------------------------------------------------------------------------
 
 class _ContentExtractor(HTMLParser):
-    """Single-pass HTML parser that pulls title, body text, and first image."""
+    """Single-pass HTML parser — pulls title, body text, and first image URL."""
 
     _SKIP = frozenset({
         "script", "style", "nav", "header", "footer", "aside",
@@ -179,7 +310,6 @@ class _ContentExtractor(HTMLParser):
 
 
 def _parse_html(html: str) -> dict:
-    """Return dict with title, body, image_url extracted from raw HTML."""
     extractor = _ContentExtractor()
     extractor.feed(html)
     return {
@@ -190,7 +320,7 @@ def _parse_html(html: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Language detection (Unicode character range heuristic, no external deps)
+# Language detection (Unicode heuristic, no external deps)
 # ---------------------------------------------------------------------------
 
 _FRENCH_MARKERS = frozenset({
@@ -201,25 +331,18 @@ _FRENCH_MARKERS = frozenset({
 
 
 def detect_language(text: str) -> str:
-    """
-    Detect language from text using Unicode character ranges and French markers.
-    Returns: "he" | "ar" | "fr" | "en"
-    """
+    """Returns 'he' | 'ar' | 'fr' | 'en' based on character-range heuristics."""
     sample = text[:2000]
     total = max(len(sample), 1)
-
     hebrew = sum(1 for c in sample if "\u0590" <= c <= "\u05FF")
     arabic = sum(1 for c in sample if "\u0600" <= c <= "\u06FF")
-
     if hebrew / total > 0.08:
         return "he"
     if arabic / total > 0.08:
         return "ar"
-
     words = set(re.findall(r"\b[a-z]{2,}\b", sample.lower()))
     if len(words & _FRENCH_MARKERS) >= 3:
         return "fr"
-
     return "en"
 
 
@@ -228,7 +351,7 @@ def detect_language(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 async def _fetch_html(url: str) -> str:
-    """Fetch URL and return decoded HTML. Raises httpx errors on failure."""
+    """Fetch URL and return decoded HTML. Raises on non-200 or non-HTML responses."""
     domain = urlparse(url).netloc
     await _rate_limit(domain)
 
@@ -252,14 +375,14 @@ async def _fetch_html(url: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Main scrape-and-save entry point
+# Main entry point
 # ---------------------------------------------------------------------------
 
 async def scrape_and_save(job_id: int) -> None:
     """
-    Fetch the job's URL, parse content, and save a new Article if not duplicate.
-    Updates job.status, job.scraped_count, job.last_run, job.error_message in DB.
-    All exceptions are caught and stored in the job record — never re-raised.
+    Search for articles using the job's keywords, fetch full HTML content,
+    and persist new Articles. Updates job.status in DB.
+    All exceptions are caught and stored in job.error_message — never re-raised.
     """
     db = SessionLocal()
     try:
@@ -268,49 +391,95 @@ async def scrape_and_save(job_id: int) -> None:
             logger.error("scrape_and_save: job %d not found", job_id)
             return
 
-        # Mark as running
+        keywords: list[str] = job.keywords or []
+        language: str = job.language or "en"
+
+        if not keywords:
+            _fail_job(db, job, "Job has no keywords — add at least one search term")
+            return
+
+        # Mark running
         job.status = ScrapeJobStatus.running
         job.error_message = None
         db.commit()
 
-        try:
-            validated_url = await validate_url(job.url)
-            html = await _fetch_html(validated_url)
-        except Exception as exc:
-            logger.warning("Job %d fetch failed: %s", job_id, exc)
-            _fail_job(db, job, str(exc))
-            return
-
-        parsed = _parse_html(html)
-
-        if not parsed["body"]:
-            _fail_job(db, job, "No extractable body text found in page")
-            return
-
-        # Deduplicate by source_url
-        existing = db.query(Article).filter(Article.source_url == job.url).first()
-        if existing:
-            logger.info("Job %d: article already exists for %s, skipping", job_id, job.url)
-            _complete_job(db, job, new_articles=0)
-            return
-
-        detected_lang = detect_language(parsed["body"])
-        logger.info("Job %d: detected language=%s for %s", job_id, detected_lang, job.url)
-
-        article = Article(
-            title=parsed["title"][:500],  # guard against pathological titles
-            body=parsed["body"],
-            source_url=job.url,
-            status=ArticleStatus.pending,
-            image_url=parsed["image_url"],
-            site_id=job.site_id,
+        logger.info(
+            "Job %d: searching keywords=%r language=%s", job_id, keywords, language
         )
-        db.add(article)
-        db.flush()  # get article.id without full commit
 
-        job.scraped_count = (job.scraped_count or 0) + 1
-        _complete_job(db, job, new_articles=1)
-        logger.info("Job %d: saved article id=%d from %s", job_id, article.id, job.url)
+        # 1. Run both providers concurrently
+        tavily_results, google_results = await asyncio.gather(
+            _tavily_search(keywords, language),
+            _google_search(keywords, language),
+        )
+
+        if not tavily_results and not google_results:
+            _fail_job(
+                db, job,
+                "No results from Tavily or Google — check API keys in environment",
+            )
+            return
+
+        candidates = _merge_results(tavily_results, google_results)
+        logger.info(
+            "Job %d: %d candidates (tavily=%d google=%d) after dedup",
+            job_id, len(candidates), len(tavily_results), len(google_results),
+        )
+
+        new_count = 0
+
+        # 2. Fetch full content for each candidate
+        for item in candidates:
+            url = item["url"]
+
+            # Skip already-saved articles
+            if db.query(Article).filter(Article.source_url == url).first():
+                logger.debug("Job %d: skip duplicate %s", job_id, url)
+                continue
+
+            # SSRF validation
+            try:
+                validated_url = await validate_url(url)
+            except ValueError as exc:
+                logger.warning("Job %d: SSRF block %s — %s", job_id, url, exc)
+                continue
+
+            # Full HTML fetch
+            try:
+                html = await _fetch_html(validated_url)
+            except Exception as exc:
+                logger.warning("Job %d: fetch failed %s — %s", job_id, url, exc)
+                continue
+
+            parsed = _parse_html(html)
+            if not parsed["body"]:
+                logger.debug("Job %d: no body text at %s, skipping", job_id, url)
+                continue
+
+            title = item["title"] or parsed["title"] or "Untitled"
+
+            article = Article(
+                title=title[:500],
+                body=parsed["body"],
+                source_url=url,
+                status=ArticleStatus.pending,
+                image_url=parsed["image_url"],
+                # Tavily provides a relevance score (0–1); Google returns 0.0
+                ai_score=item["score"] if item["score"] > 0 else None,
+                site_id=job.site_id,
+            )
+            db.add(article)
+            db.flush()
+            new_count += 1
+
+            logger.info(
+                "Job %d: saved article id=%d url=%s source=%s score=%.3f",
+                job_id, article.id, url, item["source"], item["score"],
+            )
+
+        job.scraped_count = (job.scraped_count or 0) + new_count
+        _complete_job(db, job)
+        logger.info("Job %d: complete — %d new articles saved", job_id, new_count)
 
     except Exception as exc:
         logger.exception("Job %d: unexpected error", job_id)
@@ -324,11 +493,9 @@ async def scrape_and_save(job_id: int) -> None:
         db.close()
 
 
-def _complete_job(db, job: ScrapeJob, new_articles: int) -> None:
+def _complete_job(db, job: ScrapeJob) -> None:
     job.status = ScrapeJobStatus.done
     job.last_run = datetime.now(timezone.utc)
-    if new_articles:
-        job.scraped_count = (job.scraped_count or 0)  # already incremented by caller
     db.commit()
 
 

@@ -4,22 +4,36 @@ import { createJob } from '../../services/scrapeJobs'
 import { getSites } from '../../services/sites'
 import Modal from '../../components/Modal'
 
-const EMPTY = { site_id: '', url: '', frequency_minutes: 60, category_rules: '' }
+const LANGUAGES = [
+  { value: 'en', label: 'English', dir: 'LTR' },
+  { value: 'fr', label: 'French',  dir: 'LTR' },
+  { value: 'he', label: 'Hebrew',  dir: 'RTL' },
+  { value: 'ar', label: 'Arabic',  dir: 'RTL' },
+]
 
-function TagsInput({ value, onChange }) {
-  const tags = value ? value.split(',').map((t) => t.trim()).filter(Boolean) : []
+const EMPTY = { site_id: '', keywords: [], language: 'en', frequency_minutes: 60, category_rules: '' }
 
+// ---------------------------------------------------------------------------
+// TagsInput — shared chip-based keyword input
+// ---------------------------------------------------------------------------
+function TagsInput({ value: tags, onChange, placeholder }) {
   function removeTag(tag) {
-    onChange(tags.filter((t) => t !== tag).join(', '))
+    onChange(tags.filter((t) => t !== tag))
   }
 
   function handleKeyDown(e) {
     if ((e.key === 'Enter' || e.key === ',') && e.target.value.trim()) {
       e.preventDefault()
       const newTag = e.target.value.trim().replace(/,/g, '')
-      if (!tags.includes(newTag)) {
-        onChange([...tags, newTag].join(', '))
-      }
+      if (newTag && !tags.includes(newTag)) onChange([...tags, newTag])
+      e.target.value = ''
+    }
+  }
+
+  function handleBlur(e) {
+    if (e.target.value.trim()) {
+      const newTag = e.target.value.trim()
+      if (!tags.includes(newTag)) onChange([...tags, newTag])
       e.target.value = ''
     }
   }
@@ -34,21 +48,18 @@ function TagsInput({ value, onChange }) {
       ))}
       <input
         type="text"
-        placeholder={tags.length === 0 ? 'Type a keyword and press Enter or comma…' : ''}
+        placeholder={tags.length === 0 ? (placeholder || 'Type and press Enter or comma…') : ''}
         className="outline-none text-sm flex-1 min-w-[140px] bg-transparent"
         onKeyDown={handleKeyDown}
-        onBlur={(e) => {
-          if (e.target.value.trim()) {
-            const newTag = e.target.value.trim()
-            if (!tags.includes(newTag)) onChange([...tags, newTag].join(', '))
-            e.target.value = ''
-          }
-        }}
+        onBlur={handleBlur}
       />
     </div>
   )
 }
 
+// ---------------------------------------------------------------------------
+// Modal
+// ---------------------------------------------------------------------------
 export default function ScrapeJobModal({ onClose }) {
   const qc = useQueryClient()
   const [form, setForm] = useState(EMPTY)
@@ -80,13 +91,13 @@ export default function ScrapeJobModal({ onClose }) {
     e.preventDefault()
     const next = {}
     if (!form.site_id) next.site_id = 'Select a site'
-    if (!form.url.trim()) next.url = 'Required'
-    else if (!/^https?:\/\/.+/.test(form.url.trim())) next.url = 'Must start with http:// or https://'
+    if (form.keywords.length === 0) next.keywords = 'Add at least one search keyword'
     if (!form.frequency_minutes || form.frequency_minutes < 1) next.frequency_minutes = 'Must be at least 1 minute'
     if (Object.keys(next).length) { setErrors(next); return }
     mutation.mutate({
       site_id: Number(form.site_id),
-      url: form.url.trim(),
+      keywords: form.keywords,
+      language: form.language,
       frequency_minutes: Number(form.frequency_minutes),
       category_rules: form.category_rules.trim() || null,
     })
@@ -101,30 +112,73 @@ export default function ScrapeJobModal({ onClose }) {
           </div>
         )}
 
+        {/* Site */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
-          <select className={`input-field ${errors.site_id ? 'border-red-400' : ''}`}
-            value={form.site_id} onChange={(e) => set('site_id', e.target.value)}>
+          <select
+            className={`input-field ${errors.site_id ? 'border-red-400' : ''}`}
+            value={form.site_id}
+            onChange={(e) => set('site_id', e.target.value)}
+          >
             <option value="">Select a site…</option>
-            {activeSites.map((s) => <option key={s.id} value={s.id}>{s.name} — {s.domain}</option>)}
+            {activeSites.map((s) => (
+              <option key={s.id} value={s.id}>{s.name} — {s.domain}</option>
+            ))}
           </select>
           {errors.site_id && <p className="mt-1 text-xs text-red-600">{errors.site_id}</p>}
         </div>
 
+        {/* Search Keywords */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">URL to Scrape</label>
-          <input type="url" className={`input-field ${errors.url ? 'border-red-400' : ''}`}
-            value={form.url} onChange={(e) => set('url', e.target.value)}
-            placeholder="https://example.com/news" />
-          {errors.url && <p className="mt-1 text-xs text-red-600">{errors.url}</p>}
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Search Keywords
+          </label>
+          <TagsInput
+            value={form.keywords}
+            onChange={(v) => set('keywords', v)}
+            placeholder="e.g. artificial intelligence, climate…"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Used to search Tavily + Google. Press Enter or comma to add a term.
+          </p>
+          {errors.keywords && <p className="mt-1 text-xs text-red-600">{errors.keywords}</p>}
         </div>
 
+        {/* Language */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Search Language</label>
+          <div className="grid grid-cols-4 gap-2">
+            {LANGUAGES.map(({ value, label, dir }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => set('language', value)}
+                className={`py-2 px-3 rounded-lg border text-sm text-center transition-colors ${
+                  form.language === value
+                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-medium'
+                    : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                }`}
+              >
+                <div className="font-semibold">{label}</div>
+                <div className="text-xs opacity-60">{dir}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Frequency */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             Frequency <span className="text-gray-400 font-normal">(minutes)</span>
           </label>
-          <input type="number" min={1} max={10080} className={`input-field ${errors.frequency_minutes ? 'border-red-400' : ''}`}
-            value={form.frequency_minutes} onChange={(e) => set('frequency_minutes', e.target.value)} />
+          <input
+            type="number"
+            min={1}
+            max={10080}
+            className={`input-field ${errors.frequency_minutes ? 'border-red-400' : ''}`}
+            value={form.frequency_minutes}
+            onChange={(e) => set('frequency_minutes', e.target.value)}
+          />
           <p className="mt-1 text-xs text-gray-400">
             {form.frequency_minutes >= 1440
               ? `Every ${Math.round(form.frequency_minutes / 1440)} day(s)`
@@ -135,12 +189,19 @@ export default function ScrapeJobModal({ onClose }) {
           {errors.frequency_minutes && <p className="mt-1 text-xs text-red-600">{errors.frequency_minutes}</p>}
         </div>
 
+        {/* Category Rules (optional) */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
-            Category Keywords <span className="text-gray-400 font-normal">(optional)</span>
+            Category Tags <span className="text-gray-400 font-normal">(optional)</span>
           </label>
-          <TagsInput value={form.category_rules} onChange={(v) => set('category_rules', v)} />
-          <p className="mt-1 text-xs text-gray-400">Keywords used to tag scraped articles. Press Enter or comma to add.</p>
+          <TagsInput
+            value={form.category_rules ? form.category_rules.split(',').map((t) => t.trim()).filter(Boolean) : []}
+            onChange={(v) => set('category_rules', v.join(', '))}
+            placeholder="Tag scraped articles…"
+          />
+          <p className="mt-1 text-xs text-gray-400">
+            Keywords used to auto-tag articles after scraping (separate from search terms).
+          </p>
         </div>
 
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">

@@ -85,11 +85,11 @@ export default function ScrapeJobs() {
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50 text-left">
                 <th className="px-4 py-3 font-medium text-gray-600">Site</th>
-                <th className="px-4 py-3 font-medium text-gray-600">URL</th>
+                <th className="px-4 py-3 font-medium text-gray-600">Search Keywords</th>
+                <th className="px-4 py-3 font-medium text-gray-600">Lang</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Frequency</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Status</th>
                 <th className="px-4 py-3 font-medium text-gray-600">Last Run</th>
-                <th className="px-4 py-3 font-medium text-gray-600">Keywords</th>
                 <th className="px-4 py-3 font-medium text-gray-600 text-right">Actions</th>
               </tr>
             </thead>
@@ -104,16 +104,17 @@ export default function ScrapeJobs() {
                       {site ? site.name : `Site #${job.site_id}`}
                       {site && <span className="block text-xs text-gray-400 font-normal">{site.domain}</span>}
                     </td>
-                    <td className="px-4 py-3 text-gray-500 max-w-[220px]">
-                      <a
-                        href={job.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="truncate block hover:text-indigo-600 hover:underline"
-                        title={job.url}
-                      >
-                        {job.url}
-                      </a>
+                    <td className="px-4 py-3 text-xs max-w-[200px]">
+                      {(job.keywords || []).map((k) => (
+                        <span key={k} className="inline-block mr-1 mb-0.5 bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">
+                          {k}
+                        </span>
+                      ))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="rounded px-1.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 uppercase">
+                        {job.language || 'en'}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-gray-500">
                       <FrequencyLabel minutes={job.frequency_minutes} />
@@ -124,17 +125,7 @@ export default function ScrapeJobs() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDate(job.last_run_at)}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs max-w-[160px]">
-                      {job.category_rules
-                        ? job.category_rules.split(',').map((k) => k.trim()).filter(Boolean).map((k) => (
-                          <span key={k} className="inline-block mr-1 mb-0.5 bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">
-                            {k}
-                          </span>
-                        ))
-                        : <span className="text-gray-300">—</span>
-                      }
+                      {formatDate(job.last_run)}
                     </td>
                     <td className="px-4 py-3 text-right space-x-3 whitespace-nowrap">
                       <button

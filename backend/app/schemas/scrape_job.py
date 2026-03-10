@@ -1,20 +1,44 @@
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, HttpUrl
+from typing import List, Optional
+from pydantic import BaseModel, field_validator
 from app.models.scrape_job import ScrapeJobStatus
 
 
 class ScrapeJobCreate(BaseModel):
     site_id: int
-    url: HttpUrl
+    keywords: List[str]
+    language: str = "en"
     frequency_minutes: int = 60
     category_rules: Optional[str] = None
+
+    @field_validator("keywords")
+    @classmethod
+    def keywords_not_empty(cls, v: List[str]) -> List[str]:
+        cleaned = [k.strip() for k in v if k.strip()]
+        if not cleaned:
+            raise ValueError("At least one keyword is required")
+        return cleaned
+
+    @field_validator("language")
+    @classmethod
+    def language_supported(cls, v: str) -> str:
+        if v not in ("en", "fr", "he", "ar"):
+            raise ValueError("Language must be one of: en, fr, he, ar")
+        return v
+
+    @field_validator("frequency_minutes")
+    @classmethod
+    def frequency_positive(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("frequency_minutes must be at least 1")
+        return v
 
 
 class ScrapeJobResponse(BaseModel):
     id: int
     site_id: int
-    url: str
+    keywords: List[str]
+    language: str
     status: ScrapeJobStatus
     scraped_count: int
     error_message: Optional[str]
