@@ -22,6 +22,10 @@ class ScrapeJob(Base):
     scraped_count = Column(Integer, default=0, nullable=True)
     error_message = Column(Text, nullable=True)
     frequency_minutes = Column(Integer, default=60, nullable=False)
+    # Comma-separated category keywords, e.g. "politics,economy,health"
+    # NOTE: If upgrading an existing DB, run:
+    #   ALTER TABLE scrape_jobs ADD COLUMN category_rules TEXT;
+    category_rules = Column(Text, nullable=True)
     last_run = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),

@@ -5,6 +5,7 @@ import { useDirection } from '../../hooks/useDirection'
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', end: true },
   { to: '/admin/sites', label: 'Sites' },
+  { to: '/admin/scrape-jobs', label: 'Scrape Jobs' },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/analytics', label: 'Analytics' },
 ]

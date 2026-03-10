@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, EmailStr, field_validator
 from app.models.user import UserRole
 import re
@@ -12,12 +13,17 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def password_strength(cls, v):
-        """סיסמה חייבת: מינימום 8 תווים + לפחות מספר אחד"""
         if len(v) < 8:
             raise ValueError("Password must be at least 8 characters")
         if not re.search(r"\d", v):
             raise ValueError("Password must contain at least one number")
         return v
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[UserRole] = None
+    is_active: Optional[bool] = None
 
 
 class UserLogin(BaseModel):

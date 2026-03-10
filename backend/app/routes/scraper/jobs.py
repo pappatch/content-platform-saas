@@ -45,11 +45,25 @@ def create_job(
         site_id=job_data.site_id,
         url=str(job_data.url),
         frequency_minutes=job_data.frequency_minutes,
+        category_rules=job_data.category_rules,
     )
     db.add(job)
     db.commit()
     db.refresh(job)
     return job
+
+
+@router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scrape job not found")
+    db.delete(job)
+    db.commit()
 
 
 @router.post("/{job_id}/run", response_model=ScrapeJobResponse)

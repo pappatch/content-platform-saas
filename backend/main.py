@@ -14,6 +14,7 @@ from app.routes.cms.categories import router as categories_router
 from app.routes.scraper.jobs import router as scraper_router
 from app.routes.admin.analytics import router as analytics_router
 from app.routes.public.public import router as public_router
+from app.routes.admin.users import router as admin_users_router
 from app.workers.scrape_worker import worker_loop
 from app.workers.review_worker import review_worker_loop
 import app.models
@@ -63,6 +64,7 @@ app.include_router(categories_router)
 app.include_router(scraper_router)
 app.include_router(analytics_router)
 app.include_router(public_router)
+app.include_router(admin_users_router)
 
 
 @app.get("/health")

@@ -5,6 +5,8 @@ import Login from './pages/Login'
 import AdminLayout from './apps/admin/AdminLayout'
 import AdminDashboard from './apps/admin/Dashboard'
 import AdminSites from './apps/admin/Sites'
+import AdminScrapeJobs from './apps/admin/ScrapeJobs'
+import AdminUsers from './apps/admin/Users'
 
 import CmsLayout from './apps/cms/CmsLayout'
 import CmsDashboard from './apps/cms/Dashboard'
@@ -28,6 +30,8 @@ export default function App() {
       >
         <Route index element={<AdminDashboard />} />
         <Route path="sites" element={<AdminSites />} />
+        <Route path="scrape-jobs" element={<AdminScrapeJobs />} />
+        <Route path="users" element={<AdminUsers />} />
       </Route>
 
       {/* CMS app — editor or admin */}

@@ -12,10 +12,14 @@ router = APIRouter(prefix="/sites", tags=["Sites"])
 
 @router.get("", response_model=List[SiteResponse])
 def list_sites(
+    show_all: bool = False,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return db.query(Site).filter(Site.is_active == True).all()
+    query = db.query(Site)
+    if not show_all:
+        query = query.filter(Site.is_active == True)
+    return query.order_by(Site.created_at.desc()).all()
 
 
 @router.get("/{site_id}", response_model=SiteResponse)
