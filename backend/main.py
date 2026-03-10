@@ -1,5 +1,10 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
 from app.config import get_settings
 from app.database import engine, Base
 from app.routes.auth import router as auth_router
@@ -8,16 +13,34 @@ from app.routes.cms.articles import router as articles_router
 from app.routes.cms.categories import router as categories_router
 from app.routes.scraper.jobs import router as scraper_router
 from app.routes.admin.analytics import router as analytics_router
+from app.workers.scrape_worker import worker_loop
 import app.models
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 
-Base.metadata.create_all(bind=engine)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    worker_task = asyncio.create_task(worker_loop())
+    logger.info("Application startup complete")
+    try:
+        yield
+    finally:
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Application shutdown complete")
+
 
 app = FastAPI(
     title="Content Platform API",
     version="0.1.0",
-    docs_url="/docs" if settings.debug else None
+    docs_url="/docs" if settings.debug else None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(

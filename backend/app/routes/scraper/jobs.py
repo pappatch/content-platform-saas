@@ -1,11 +1,12 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.scrape_job import ScrapeJob
+from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
 from app.models.user import User
 from app.schemas.scrape_job import ScrapeJobCreate, ScrapeJobResponse
 from app.security.permissions import get_current_user, require_admin
+from app.services.scraper import scrape_and_save
 
 router = APIRouter(prefix="/scraper/jobs", tags=["Scraper"])
 
@@ -43,8 +44,33 @@ def create_job(
     job = ScrapeJob(
         site_id=job_data.site_id,
         url=str(job_data.url),
+        frequency_minutes=job_data.frequency_minutes,
     )
     db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.post("/{job_id}/run", response_model=ScrapeJobResponse)
+def run_job(
+    job_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Manually trigger a scrape job. Returns immediately; scraping runs in background."""
+    job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scrape job not found")
+    if job.status == ScrapeJobStatus.running:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Job is already running",
+        )
+    background_tasks.add_task(scrape_and_save, job_id)
+    # Optimistically reflect the queued state in the response
+    job.status = ScrapeJobStatus.running
     db.commit()
     db.refresh(job)
     return job

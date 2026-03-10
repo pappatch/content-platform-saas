@@ -21,6 +21,8 @@ class ScrapeJob(Base):
     status = Column(Enum(ScrapeJobStatus), default=ScrapeJobStatus.pending, nullable=False)
     scraped_count = Column(Integer, default=0, nullable=True)
     error_message = Column(Text, nullable=True)
+    frequency_minutes = Column(Integer, default=60, nullable=False)
+    last_run = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
