@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+*.egg-info/
+
+# סביבה
+.env
+.env.local
+.env.*.local
+
+# DB מקומי
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+.next/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
+logs/
+
+# AWS
+.aws/
