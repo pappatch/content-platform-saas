@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.database import engine, Base
+from app.database import engine
 from app.routes.auth import router as auth_router
 from app.routes.sites.sites import router as sites_router
 from app.routes.cms.articles import router as articles_router
@@ -25,7 +25,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    # Schema is managed by Alembic — run `alembic upgrade head` before starting.
     scrape_task = asyncio.create_task(worker_loop())
     review_task = asyncio.create_task(review_worker_loop())
     logger.info("Application startup complete")
