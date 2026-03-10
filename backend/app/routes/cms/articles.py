@@ -1,5 +1,6 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.article import Article, ArticleStatus
@@ -8,6 +9,23 @@ from app.schemas.article import ArticleCreate, ArticleUpdate, ArticleResponse
 from app.security.permissions import get_current_user, require_editor
 
 router = APIRouter(prefix="/cms/articles", tags=["CMS - Articles"])
+
+
+@router.get("/stats")
+def get_article_stats(
+    site_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return article counts grouped by status (optionally scoped to a site)."""
+    q = db.query(Article.status, func.count(Article.id))
+    if site_id:
+        q = q.filter(Article.site_id == site_id)
+    rows = q.group_by(Article.status).all()
+    counts = {s.value: 0 for s in ArticleStatus}
+    for stat, cnt in rows:
+        counts[stat.value] = cnt
+    return {"total": sum(counts.values()), **counts}
 
 
 @router.get("", response_model=List[ArticleResponse])
@@ -22,7 +40,7 @@ def list_articles(
         query = query.filter(Article.site_id == site_id)
     if article_status is not None:
         query = query.filter(Article.status == article_status)
-    return query.all()
+    return query.order_by(Article.created_at.desc()).all()
 
 
 @router.get("/{article_id}", response_model=ArticleResponse)

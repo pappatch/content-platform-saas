@@ -10,6 +10,9 @@ import AdminUsers from './apps/admin/Users'
 
 import CmsLayout from './apps/cms/CmsLayout'
 import CmsDashboard from './apps/cms/Dashboard'
+import CmsArticles from './apps/cms/Articles'
+import CmsArticleDetail from './apps/cms/ArticleDetail'
+import CmsCategories from './apps/cms/Categories'
 
 import ReviewLayout from './apps/review/ReviewLayout'
 import ReviewDashboard from './apps/review/Dashboard'
@@ -44,7 +47,9 @@ export default function App() {
         }
       >
         <Route index element={<CmsDashboard />} />
-        {/* Future: articles, categories routes */}
+        <Route path="articles" element={<CmsArticles />} />
+        <Route path="articles/:id" element={<CmsArticleDetail />} />
+        <Route path="categories" element={<CmsCategories />} />
       </Route>
 
       {/* Review app — any authenticated user */}
