@@ -54,7 +54,7 @@ async def _run_due_jobs() -> None:
             return
         logger.info("Worker: %d job(s) due for execution", len(due))
         for job in due:
-            logger.info("Worker: starting job id=%d url=%s", job.id, job.url)
+            logger.info("Worker: starting job id=%d keywords=%s", job.id, job.keywords)
             await scrape_and_save(job.id)
     except Exception:
         logger.exception("Worker: error while collecting due jobs")
