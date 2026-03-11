@@ -252,46 +252,60 @@ def _merge_results(tavily: list[dict], google: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class _ContentExtractor(HTMLParser):
-    """Single-pass HTML parser — pulls title, body text, and first image URL."""
+    """Single-pass HTML parser — pulls title, paragraph-structured body, and all image URLs."""
 
     _SKIP = frozenset({
         "script", "style", "nav", "header", "footer", "aside",
         "noscript", "iframe", "form", "button",
     })
-    _CONTENT = frozenset({
+    # Block-level content tags — each creates a paragraph break
+    _BLOCK = frozenset({
         "p", "h1", "h2", "h3", "h4", "h5", "h6",
-        "li", "td", "article", "main", "section", "blockquote",
+        "li", "td", "blockquote",
     })
+    # Container tags that enable content collection but don't create breaks themselves
+    _CONTAINER = frozenset({"article", "main", "section"})
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.title: str = ""
-        self.image_url: Optional[str] = None
-        self._parts: list[str] = []
+        self.images: list[str] = []              # all image URLs found on page
+        self._paragraphs: list[list[str]] = [[]] # each inner list = one paragraph's chunks
         self._in_title: bool = False
         self._skip_depth: int = 0
-        self._content_depth: int = 0
+        self._block_depth: int = 0
+        self._container_depth: int = 0
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         attrs_dict = dict(attrs)
         if tag == "title":
             self._in_title = True
-        if tag == "img" and not self.image_url:
+        if tag == "img":
             src = attrs_dict.get("src", "")
-            if src.startswith("http"):
-                self.image_url = src
+            if src.startswith("http") and src not in self.images:
+                self.images.append(src)
         if tag in self._SKIP:
             self._skip_depth += 1
-        if tag in self._CONTENT:
-            self._content_depth += 1
+            return
+        if tag in self._BLOCK:
+            if self._paragraphs[-1]:  # start fresh paragraph if current one has content
+                self._paragraphs.append([])
+            self._block_depth += 1
+        elif tag in self._CONTAINER:
+            self._container_depth += 1
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self._in_title = False
         if tag in self._SKIP:
             self._skip_depth = max(0, self._skip_depth - 1)
-        if tag in self._CONTENT:
-            self._content_depth = max(0, self._content_depth - 1)
+            return
+        if tag in self._BLOCK:
+            self._block_depth = max(0, self._block_depth - 1)
+            if self._paragraphs[-1]:  # close the paragraph
+                self._paragraphs.append([])
+        elif tag in self._CONTAINER:
+            self._container_depth = max(0, self._container_depth - 1)
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth > 0:
@@ -301,12 +315,18 @@ class _ContentExtractor(HTMLParser):
             return
         if self._in_title:
             self.title += text
-        elif self._content_depth > 0:
-            self._parts.append(text)
+        elif self._block_depth > 0 or self._container_depth > 0:
+            self._paragraphs[-1].append(text)
 
     @property
     def body(self) -> str:
-        return " ".join(self._parts)
+        """Return body with \n\n between paragraphs."""
+        paras = [" ".join(chunks) for chunks in self._paragraphs if chunks]
+        return "\n\n".join(paras)
+
+    @property
+    def image_url(self) -> Optional[str]:
+        return self.images[0] if self.images else None
 
 
 def _parse_html(html: str) -> dict:
@@ -316,6 +336,7 @@ def _parse_html(html: str) -> dict:
         "title": extractor.title.strip() or "Untitled",
         "body": extractor.body.strip(),
         "image_url": extractor.image_url,
+        "images": extractor.images,
     }
 
 
@@ -464,6 +485,7 @@ async def scrape_and_save(job_id: int) -> None:
                 source_url=url,
                 status=ArticleStatus.pending,
                 image_url=parsed["image_url"],
+                images=parsed["images"] or None,
                 # Tavily provides a relevance score (0–1); Google returns 0.0
                 ai_score=item["score"] if item["score"] > 0 else None,
                 site_id=job.site_id,

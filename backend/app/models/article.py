@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Text, Enum, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from app.database import Base
@@ -29,6 +29,10 @@ class Article(Base):
     seo_description = Column(String, nullable=True)
     seo_keywords = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
+    images = Column(JSON, nullable=True)          # list of all image URLs from source page
+
+    # Translation
+    translated_from = Column(String, nullable=True)  # original language code, e.g. "en"
 
     # Editorial
     is_pinned = Column(Boolean, default=False)

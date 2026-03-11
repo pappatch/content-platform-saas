@@ -45,6 +45,11 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+        <div className="px-4 py-3 border-t border-indigo-700 space-y-1">
+          <p className="text-xs text-indigo-500 uppercase tracking-wider mb-1">Switch to</p>
+          <Link to="/cms" className="block text-xs text-indigo-300 hover:text-white py-0.5">CMS →</Link>
+          <Link to="/review" className="block text-xs text-indigo-300 hover:text-white py-0.5">Review →</Link>
+        </div>
         <div className="px-4 py-4 border-t border-indigo-700 space-y-2">
           <button
             onClick={toggle}

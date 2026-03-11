@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from pydantic import BaseModel
 from app.models.article import ArticleStatus
 
@@ -13,6 +13,8 @@ class ArticleCreate(BaseModel):
     seo_description: Optional[str] = None
     seo_keywords: Optional[str] = None
     image_url: Optional[str] = None
+    images: Optional[List[str]] = None
+    translated_from: Optional[str] = None
     is_pinned: bool = False
     pin_order: Optional[int] = None
     site_id: int
@@ -29,6 +31,8 @@ class ArticleUpdate(BaseModel):
     seo_description: Optional[str] = None
     seo_keywords: Optional[str] = None
     image_url: Optional[str] = None
+    images: Optional[List[str]] = None
+    translated_from: Optional[str] = None
     is_pinned: Optional[bool] = None
     pin_order: Optional[int] = None
     category_id: Optional[int] = None
@@ -47,6 +51,8 @@ class ArticleResponse(BaseModel):
     seo_description: Optional[str]
     seo_keywords: Optional[str]
     image_url: Optional[str]
+    images: Optional[List[str]]
+    translated_from: Optional[str]
     is_pinned: bool
     pin_order: Optional[int]
     site_id: int

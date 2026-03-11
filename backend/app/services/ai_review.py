@@ -1,11 +1,17 @@
 """
-AI Review service — quality scoring, flag generation, and SEO enrichment.
+AI Review service — quality scoring, flag generation, SEO enrichment, and translation.
 
 Architecture
 ------------
 A single Anthropic API call uses tool use with tool_choice="tool" to force a
 structured JSON response containing score, flags, and all SEO fields. This
 guarantees parseable output and avoids a second API round-trip.
+
+Translation
+-----------
+After scraping, if the article language differs from the site language, a second
+Anthropic call translates title and body to the site language. The original
+language code is stored in translated_from for provenance tracking.
 
 Security invariants
 -------------------
@@ -26,6 +32,8 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.models.article import Article, ArticleStatus
 from app.models.category import Category
+from app.models.site import Site
+from app.services.scraper import detect_language
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -38,8 +46,15 @@ MODEL = "claude-haiku-4-5-20251001"
 BODY_CHAR_LIMIT = 2000
 MAX_TOKENS = 1024
 
+LANGUAGE_NAMES = {
+    "en": "English",
+    "he": "Hebrew",
+    "ar": "Arabic",
+    "fr": "French",
+}
+
 # ---------------------------------------------------------------------------
-# Tool definition — forces structured output via tool_choice
+# Tool definitions
 # ---------------------------------------------------------------------------
 
 _REVIEW_TOOL = {
@@ -83,12 +98,31 @@ _REVIEW_TOOL = {
     },
 }
 
+_TRANSLATE_TOOL = {
+    "name": "translate_article",
+    "description": "Translate the article title and body to the target language.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "title": {
+                "type": "string",
+                "description": "Translated title.",
+            },
+            "body": {
+                "type": "string",
+                "description": "Translated body text, preserving paragraph structure.",
+            },
+        },
+        "required": ["title", "body"],
+    },
+}
+
 
 # ---------------------------------------------------------------------------
-# Prompt builder
+# Prompt builders
 # ---------------------------------------------------------------------------
 
-def _build_prompt(title: str, body: str, category_names: list[str]) -> str:
+def _build_review_prompt(title: str, body: str, category_names: list[str]) -> str:
     categories_str = ", ".join(category_names) if category_names else "general"
     truncated_body = body[:BODY_CHAR_LIMIT]
     ellipsis = "…" if len(body) > BODY_CHAR_LIMIT else ""
@@ -105,6 +139,19 @@ def _build_prompt(title: str, body: str, category_names: list[str]) -> str:
     )
 
 
+def _build_translate_prompt(title: str, body: str, target_lang: str) -> str:
+    lang_name = LANGUAGE_NAMES.get(target_lang, target_lang)
+    truncated_body = body[:BODY_CHAR_LIMIT]
+    ellipsis = "…" if len(body) > BODY_CHAR_LIMIT else ""
+    return (
+        f"Translate the following article to {lang_name}. "
+        "Preserve the paragraph structure and maintain a natural, journalistic tone.\n\n"
+        f"Title: {title}\n\n"
+        f"Body:\n{truncated_body}{ellipsis}\n\n"
+        "Call translate_article with the translated title and body."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Core async function
 # ---------------------------------------------------------------------------
@@ -113,13 +160,12 @@ async def ai_review_and_enrich(article_id: int) -> None:
     """
     Review and enrich a single article via the Anthropic API.
 
-    - Loads the article and its site's categories from the DB.
-    - Sends a structured review request to claude-haiku.
-    - Applies the configured score threshold:
-        score >= threshold  →  status = published
-        score <  threshold  →  status = published, ai_flags populated (editor review)
-    - Saves ai_score, ai_flags, seo_title, seo_description, seo_keywords.
-    - On any error: logs it and leaves status = pending (safe to retry).
+    Steps:
+    1. Detect article language; if it differs from site language, translate first.
+    2. Score, flag, and generate SEO metadata.
+    3. Publish the article (with flags if score is below threshold).
+
+    On any error: logs it and leaves status = pending (safe to retry).
     """
     if not settings.anthropic_api_key:
         logger.warning(
@@ -143,7 +189,32 @@ async def ai_review_and_enrich(article_id: int) -> None:
             )
             return
 
-        # Fetch site categories for context
+        # --- Translation step ---
+        site = db.query(Site).filter(Site.id == article.site_id).first()
+        site_lang = site.language.value if site else "en"
+        article_lang = detect_language(article.title + " " + article.body)
+
+        if article_lang != site_lang:
+            logger.info(
+                "Article %d language=%s differs from site language=%s — translating",
+                article_id, article_lang, site_lang,
+            )
+            try:
+                translated = await _translate(article.title, article.body, site_lang)
+                article.title = translated["title"]
+                article.body = translated["body"]
+                article.translated_from = article_lang
+                db.flush()
+                logger.info(
+                    "Article %d translated %s→%s", article_id, article_lang, site_lang
+                )
+            except Exception:
+                logger.warning(
+                    "ai_review_and_enrich: translation failed for article %d, proceeding without",
+                    article_id,
+                )
+
+        # --- Review step ---
         category_names = [
             row.name
             for row in db.query(Category).filter(
@@ -151,12 +222,11 @@ async def ai_review_and_enrich(article_id: int) -> None:
             ).all()
         ]
 
-        prompt = _build_prompt(article.title, article.body, category_names)
+        prompt = _build_review_prompt(article.title, article.body, category_names)
 
         try:
-            result = await _call_api(prompt)
-        except Exception as exc:
-            # _call_api already logged the details; keep article pending
+            result = await _call_review_api(prompt)
+        except Exception:
             logger.warning(
                 "ai_review_and_enrich: API call failed for article %d, leaving pending",
                 article_id,
@@ -178,17 +248,12 @@ async def ai_review_and_enrich(article_id: int) -> None:
         if score >= settings.ai_review_threshold:
             logger.info(
                 "Article %d published — score=%.2f (above threshold %.2f)",
-                article_id,
-                score,
-                settings.ai_review_threshold,
+                article_id, score, settings.ai_review_threshold,
             )
         else:
             logger.info(
                 "Article %d published with flags — score=%.2f (below threshold %.2f), flags=%s",
-                article_id,
-                score,
-                settings.ai_review_threshold,
-                flags,
+                article_id, score, settings.ai_review_threshold, flags,
             )
 
     except Exception:
@@ -197,12 +262,12 @@ async def ai_review_and_enrich(article_id: int) -> None:
         db.close()
 
 
-async def _call_api(prompt: str) -> dict:
-    """
-    Call the Anthropic API with tool_choice forced to review_and_enrich.
-    Returns the parsed tool input dict.
-    Raises on any API or parsing error (caller handles recovery).
-    """
+# ---------------------------------------------------------------------------
+# API call helpers
+# ---------------------------------------------------------------------------
+
+async def _call_review_api(prompt: str) -> dict:
+    """Call the review tool and return its input dict."""
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     try:
@@ -229,10 +294,28 @@ async def _call_api(prompt: str) -> dict:
         logger.error("Anthropic API: %s", exc)
         raise
 
-    # Extract the tool_use block — guaranteed present because tool_choice forced it
     for block in response.content:
         if block.type == "tool_use" and block.name == "review_and_enrich":
             return block.input
 
-    # Should never reach here when tool_choice is forced, but guard anyway
     raise ValueError("Anthropic response contained no review_and_enrich tool call")
+
+
+async def _translate(title: str, body: str, target_lang: str) -> dict:
+    """Translate title + body to target_lang. Returns {title, body}."""
+    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    prompt = _build_translate_prompt(title, body, target_lang)
+
+    response = await client.messages.create(
+        model=MODEL,
+        max_tokens=MAX_TOKENS * 3,  # translations can be longer than reviews
+        tools=[_TRANSLATE_TOOL],
+        tool_choice={"type": "tool", "name": "translate_article"},
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "translate_article":
+            return block.input
+
+    raise ValueError("Anthropic response contained no translate_article tool call")
