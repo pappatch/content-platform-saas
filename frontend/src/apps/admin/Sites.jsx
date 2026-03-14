@@ -334,7 +334,7 @@ export default function Sites() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {site.config?.logo_url && (
-                          <img src={site.config.logo_url} alt="" style={{ width: 'auto', maxWidth: '120px', height: '30px', objectFit: 'contain' }} className="shrink-0" />
+                          <img src={site.config.logo_url} alt="" style={{ width: 'auto', maxWidth: '200px', height: '50px', objectFit: 'contain' }} className="shrink-0" />
                         )}
                         <div className="font-medium text-gray-900">{site.name}</div>
                       </div>

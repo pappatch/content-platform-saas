@@ -20,7 +20,7 @@ export default function SiteBrand({ site, linkClassName = '', nameClassName = ''
           src={logoUrl}
           alt=""
           aria-hidden="true"
-          style={{ width: 'auto', maxWidth: '240px', height: '60px', objectFit: 'contain' }}
+          style={{ width: 'auto', maxWidth: '200px', height: '50px', objectFit: 'contain' }}
         />
       )}
       <span className={nameClassName} style={nameStyle}>{site?.name}</span>

@@ -273,14 +273,16 @@ async def generate_logo(
     color_desc = primary_color if primary_color else "indigo blue"
 
     prompt = (
-        f"Wide horizontal landscape logo banner for a {topic} website, "
-        f"professional brand identity, minimalist icon with subtle design elements, "
-        f"{color_desc} dominant color, no text, no letters, no words, "
-        "clean white or light background, premium quality"
+        f"Professional content website logo, horizontal format, minimalist brand icon, "
+        f"{topic} theme, {color_desc} accent color, transparent background PNG, "
+        "clean premium design like BBC or TechCrunch, no text, no letters, "
+        "symbolic icon only, high contrast"
     )
 
     logger.info("generate_logo: calling Stability AI for %r (topic=%r)", site_name, topic)
 
+    # SDXL requires approved dimension pairs; 800×200 is not supported.
+    # 1536×640 (~2.4:1) is the closest valid landscape ratio available.
     try:
         async with httpx.AsyncClient(timeout=_REQUEST_TIMEOUT) as client:
             resp = await client.post(
@@ -296,8 +298,8 @@ async def generate_logo(
                         {"text": _NEGATIVE_PROMPT, "weight": -1.0},
                     ],
                     "cfg_scale": 7,
-                    "height":    768,
-                    "width":     1344,
+                    "height":    640,
+                    "width":     1536,
                     "samples":   1,
                     "steps":     30,
                 },
