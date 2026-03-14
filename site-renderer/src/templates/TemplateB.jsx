@@ -155,7 +155,7 @@ function HeroSection({ article, categoryMap, site, siteKeywords }) {
   const tagline = site?.config?.tagline
 
   return (
-    <section className="relative flex items-end overflow-hidden h-40 md:h-56">
+    <section className="relative flex items-end overflow-hidden min-h-[60vh] md:min-h-[75vh]">
       {/* Background image */}
       <img
         src={imgSrc}

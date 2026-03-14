@@ -15,7 +15,7 @@ export default function TemplateA({ site, articles, categories, categoryMap, the
   return (
     <div dir={dir} style={{ ...theme, backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} className="min-h-screen font-sans">
       {/* Masthead */}
-      <header style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
+      <header className="sticky top-0 z-40" style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
         <div className="max-w-6xl mx-auto px-4 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <SiteBrand site={site} nameClassName="text-3xl font-black tracking-tight" />
           {headerExtra}

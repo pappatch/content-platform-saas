@@ -22,7 +22,7 @@ export default function TemplateD({ site, articles, categories, categoryMap, the
   return (
     <div dir={dir} style={{ ...theme, backgroundColor: '#f3f4f6', color: 'var(--color-text)' }} className="min-h-screen">
       {/* Header bar */}
-      <header style={{ background: `linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%)`, color: '#fff' }}>
+      <header className="sticky top-0 z-40" style={{ background: `linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%)`, color: '#fff' }}>
         <div className="max-w-6xl mx-auto px-4 py-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <SiteBrand site={site} nameClassName="text-2xl font-black tracking-tight" />

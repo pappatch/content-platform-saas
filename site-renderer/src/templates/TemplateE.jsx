@@ -19,7 +19,7 @@ export default function TemplateE({ site, articles, categories, categoryMap, the
   return (
     <div dir={dir} style={{ ...theme, backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} className="min-h-screen">
       {/* Header */}
-      <header style={{ backgroundColor: 'var(--color-primary)', color: '#fff', borderBottom: '4px solid var(--color-secondary)' }}>
+      <header className="sticky top-0 z-40" style={{ backgroundColor: 'var(--color-primary)', color: '#fff', borderBottom: '4px solid var(--color-secondary)' }}>
         <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <SiteBrand site={site} nameClassName="text-2xl font-black tracking-tight" />
           <div className="flex items-center gap-4 text-sm font-medium overflow-x-auto">
