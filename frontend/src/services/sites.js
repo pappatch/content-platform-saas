@@ -23,3 +23,7 @@ export const getSiteDefaultImages = (id) =>
 /** Run the image audit on all published articles. */
 export const auditImages = (fix = true, limit = 200) =>
   api.post('/admin/images/audit', null, { params: { fix, limit } }).then((r) => r.data)
+
+/** (Re-)generate the SVG logo for a site. */
+export const regenerateSiteLogo = (id) =>
+  api.post(`/sites/${id}/regenerate-logo`).then((r) => r.data)

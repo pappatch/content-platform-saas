@@ -5,6 +5,7 @@
  */
 import { Link } from 'react-router-dom'
 import ArticleCard, { formatDate, excerpt } from '../components/ArticleCard'
+import SiteBrand from '../components/SiteBrand'
 
 export default function TemplateA({ site, articles, categories, categoryMap, theme, pageTitle, headerExtra }) {
   const dir = site?.text_direction || 'ltr'
@@ -16,7 +17,7 @@ export default function TemplateA({ site, articles, categories, categoryMap, the
       {/* Masthead */}
       <header style={{ backgroundColor: 'var(--color-primary)', color: '#fff' }}>
         <div className="max-w-6xl mx-auto px-4 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <Link to="/" className="text-3xl font-black tracking-tight">{site?.name}</Link>
+          <SiteBrand site={site} nameClassName="text-3xl font-black tracking-tight" />
           {headerExtra}
         </div>
         {/* Category nav */}

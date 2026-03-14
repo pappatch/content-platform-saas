@@ -34,6 +34,37 @@ class ScrapeJobCreate(BaseModel):
         return v
 
 
+class ScrapeJobUpdate(BaseModel):
+    keywords: Optional[List[str]] = None
+    language: Optional[str] = None
+    frequency_minutes: Optional[int] = None
+    category_rules: Optional[str] = None
+
+    @field_validator("keywords")
+    @classmethod
+    def keywords_not_empty(cls, v: Optional[List[str]]) -> Optional[List[str]]:
+        if v is None:
+            return v
+        cleaned = [k.strip() for k in v if k.strip()]
+        if not cleaned:
+            raise ValueError("At least one keyword is required")
+        return cleaned
+
+    @field_validator("language")
+    @classmethod
+    def language_supported(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ("en", "fr", "he", "ar"):
+            raise ValueError("Language must be one of: en, fr, he, ar")
+        return v
+
+    @field_validator("frequency_minutes")
+    @classmethod
+    def frequency_positive(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 1:
+            raise ValueError("frequency_minutes must be at least 1")
+        return v
+
+
 class ScrapeJobResponse(BaseModel):
     id: int
     site_id: int

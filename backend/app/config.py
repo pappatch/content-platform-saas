@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     # Image enrichment
     unsplash_access_key: Optional[str] = None
 
+    # Logo generation
+    stability_api_key: Optional[str] = None
+
     # Google Trends — max number of sites auto-created via the trends feature
     trends_auto_site_limit: int = 3
 

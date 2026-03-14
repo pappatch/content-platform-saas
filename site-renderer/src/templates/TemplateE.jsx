@@ -6,6 +6,7 @@
 import { Link } from 'react-router-dom'
 import { formatDate, excerpt } from '../components/ArticleCard'
 import ArticleCard from '../components/ArticleCard'
+import SiteBrand from '../components/SiteBrand'
 
 export default function TemplateE({ site, articles, categories, categoryMap, theme, pageTitle, headerExtra }) {
   const dir = site?.text_direction || 'ltr'
@@ -20,7 +21,7 @@ export default function TemplateE({ site, articles, categories, categoryMap, the
       {/* Header */}
       <header style={{ backgroundColor: 'var(--color-primary)', color: '#fff', borderBottom: '4px solid var(--color-secondary)' }}>
         <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <Link to="/" className="text-2xl font-black tracking-tight">{site?.name}</Link>
+          <SiteBrand site={site} nameClassName="text-2xl font-black tracking-tight" />
           <div className="flex items-center gap-4 text-sm font-medium overflow-x-auto">
             <Link to="/" className="opacity-75 hover:opacity-100 shrink-0">Home</Link>
             {categories.slice(0, 6).map((cat) => (

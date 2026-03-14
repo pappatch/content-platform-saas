@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
-import { createJob } from '../../services/scrapeJobs'
+import { createJob, updateJob } from '../../services/scrapeJobs'
 import { getSites } from '../../services/sites'
 import Modal from '../../components/Modal'
 
@@ -12,6 +12,16 @@ const LANGUAGES = [
 ]
 
 const EMPTY = { site_id: '', keywords: [], language: 'en', frequency_minutes: 60, category_rules: '' }
+
+function jobToForm(job) {
+  return {
+    site_id: String(job.site_id),
+    keywords: job.keywords || [],
+    language: job.language || 'en',
+    frequency_minutes: job.frequency_minutes ?? 60,
+    category_rules: job.category_rules || '',
+  }
+}
 
 // ---------------------------------------------------------------------------
 // TagsInput — shared chip-based keyword input
@@ -60,16 +70,19 @@ function TagsInput({ value: tags, onChange, placeholder }) {
 // ---------------------------------------------------------------------------
 // Modal
 // ---------------------------------------------------------------------------
-export default function ScrapeJobModal({ onClose }) {
+export default function ScrapeJobModal({ job = null, onClose }) {
+  const isEdit = Boolean(job)
   const qc = useQueryClient()
-  const [form, setForm] = useState(EMPTY)
+  const [form, setForm] = useState(isEdit ? jobToForm(job) : EMPTY)
   const [errors, setErrors] = useState({})
 
   const { data: sites = [] } = useQuery({ queryKey: ['sites'], queryFn: () => getSites(true) })
   const activeSites = sites.filter((s) => s.is_active)
 
   const mutation = useMutation({
-    mutationFn: createJob,
+    mutationFn: isEdit
+      ? (data) => updateJob(job.id, data)
+      : createJob,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['scrape-jobs'] }); onClose() },
     onError: (err) => {
       const detail = err.response?.data?.detail
@@ -90,21 +103,23 @@ export default function ScrapeJobModal({ onClose }) {
   function handleSubmit(e) {
     e.preventDefault()
     const next = {}
-    if (!form.site_id) next.site_id = 'Select a site'
+    if (!isEdit && !form.site_id) next.site_id = 'Select a site'
     if (form.keywords.length === 0) next.keywords = 'Add at least one search keyword'
     if (!form.frequency_minutes || form.frequency_minutes < 1) next.frequency_minutes = 'Must be at least 1 minute'
     if (Object.keys(next).length) { setErrors(next); return }
-    mutation.mutate({
-      site_id: Number(form.site_id),
+
+    const payload = {
       keywords: form.keywords,
       language: form.language,
       frequency_minutes: Number(form.frequency_minutes),
       category_rules: form.category_rules.trim() || null,
-    })
+    }
+    if (!isEdit) payload.site_id = Number(form.site_id)
+    mutation.mutate(payload)
   }
 
   return (
-    <Modal title="New Scrape Job" onClose={onClose} size="md">
+    <Modal title={isEdit ? 'Edit Scrape Job' : 'New Scrape Job'} onClose={onClose} size="md">
       <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
         {errors._general && (
           <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
@@ -112,21 +127,30 @@ export default function ScrapeJobModal({ onClose }) {
           </div>
         )}
 
-        {/* Site */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
-          <select
-            className={`input-field ${errors.site_id ? 'border-red-400' : ''}`}
-            value={form.site_id}
-            onChange={(e) => set('site_id', e.target.value)}
-          >
-            <option value="">Select a site…</option>
-            {activeSites.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} — {s.domain}</option>
-            ))}
-          </select>
-          {errors.site_id && <p className="mt-1 text-xs text-red-600">{errors.site_id}</p>}
-        </div>
+        {/* Site — shown only when creating; locked on edit */}
+        {isEdit ? (
+          <div className="rounded-lg bg-gray-50 px-4 py-2 text-sm text-gray-500">
+            Site: <span className="font-medium text-gray-700">
+              {sites.find((s) => s.id === job.site_id)?.name ?? `#${job.site_id}`}
+            </span>
+            <span className="ml-1 text-gray-400">(cannot change)</span>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Site</label>
+            <select
+              className={`input-field ${errors.site_id ? 'border-red-400' : ''}`}
+              value={form.site_id}
+              onChange={(e) => set('site_id', e.target.value)}
+            >
+              <option value="">Select a site…</option>
+              {activeSites.map((s) => (
+                <option key={s.id} value={s.id}>{s.name} — {s.domain}</option>
+              ))}
+            </select>
+            {errors.site_id && <p className="mt-1 text-xs text-red-600">{errors.site_id}</p>}
+          </div>
+        )}
 
         {/* Search Keywords */}
         <div>
@@ -207,7 +231,7 @@ export default function ScrapeJobModal({ onClose }) {
         <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
           <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
           <button type="submit" disabled={mutation.isPending} className="btn-primary">
-            {mutation.isPending ? 'Creating…' : 'Create Job'}
+            {mutation.isPending ? (isEdit ? 'Saving…' : 'Creating…') : (isEdit ? 'Save Changes' : 'Create Job')}
           </button>
         </div>
       </form>

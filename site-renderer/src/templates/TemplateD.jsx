@@ -5,6 +5,7 @@
  */
 import { Link } from 'react-router-dom'
 import { formatDate, excerpt } from '../components/ArticleCard'
+import SiteBrand from '../components/SiteBrand'
 
 function CategoryChip({ cat }) {
   return (
@@ -24,7 +25,7 @@ export default function TemplateD({ site, articles, categories, categoryMap, the
       <header style={{ background: `linear-gradient(135deg, var(--color-primary) 0%, var(--color-secondary) 100%)`, color: '#fff' }}>
         <div className="max-w-6xl mx-auto px-4 py-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <Link to="/" className="text-2xl font-black tracking-tight">{site?.name}</Link>
+            <SiteBrand site={site} nameClassName="text-2xl font-black tracking-tight" />
             {headerExtra}
           </div>
           {categories.length > 0 && (

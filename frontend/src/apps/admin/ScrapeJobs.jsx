@@ -30,6 +30,7 @@ function FrequencyLabel({ minutes }) {
 export default function ScrapeJobs() {
   const qc = useQueryClient()
   const [showModal, setShowModal] = useState(false)
+  const [editJob, setEditJob] = useState(null)   // job object to edit, or null
   const [confirmId, setConfirmId] = useState(null)
   const [runningIds, setRunningIds] = useState(new Set())
 
@@ -136,6 +137,12 @@ export default function ScrapeJobs() {
                         {isRunning ? 'Running…' : 'Run'}
                       </button>
                       <button
+                        onClick={() => setEditJob(job)}
+                        className="text-indigo-600 hover:text-indigo-800 font-medium"
+                      >
+                        Edit
+                      </button>
+                      <button
                         onClick={() => setConfirmId(job.id)}
                         className="text-red-500 hover:text-red-700 font-medium"
                       >
@@ -151,6 +158,7 @@ export default function ScrapeJobs() {
       )}
 
       {showModal && <ScrapeJobModal onClose={() => setShowModal(false)} />}
+      {editJob && <ScrapeJobModal job={editJob} onClose={() => setEditJob(null)} />}
 
       {confirmId !== null && (
         <ConfirmDialog

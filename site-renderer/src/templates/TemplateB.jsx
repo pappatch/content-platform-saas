@@ -28,6 +28,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate, excerpt } from '../components/ArticleCard'
+import SiteBrand from '../components/SiteBrand'
 import { useSite } from '../contexts/SiteContext'
 import { getDefaultImage } from '../utils/defaultImages'
 import InfiniteFeed from '../components/InfiniteFeed'
@@ -98,9 +99,7 @@ function StickyHeader({ site, categories, pageTitle, headerExtra }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6">
         {/* Top row: site name + extras */}
         <div className="flex items-center justify-between py-3 border-b border-white/10">
-          <Link to="/" className="text-white font-black text-xl tracking-tight shrink-0">
-            {site?.name}
-          </Link>
+          <SiteBrand site={site} nameClassName="text-white font-black text-xl tracking-tight" />
           {headerExtra && <div className="flex items-center">{headerExtra}</div>}
         </div>
 

@@ -94,6 +94,7 @@ GOOGLE_API_KEY=AIza...
 GOOGLE_CSE_ID=...
 ANTHROPIC_API_KEY=sk-ant-...
 UNSPLASH_ACCESS_KEY=...
+STABILITY_API_KEY=sk-...
 AI_REVIEW_THRESHOLD=0.5
 TRENDS_AUTO_SITE_LIMIT=3
 ```
@@ -377,6 +378,11 @@ GET        /analytics
   - `image_validator.py`: SVG URLs added to `_NOISE_RE` (SVGs are logos/graphics, not article photos); `validate_and_fix_article_image` simplified — passes keyword list directly to `enrich_article_images` (no more separate variant loop)
   - `image_worker.py`: loads scrape-job keywords per site; `_is_mismatched_image(url, site_kws)` detects hardcoded fallback URLs (`source.unsplash.com/featured/?`) and cross-topic animal terms; articles with valid-but-mismatched images are now replaced; uses site scrape keywords as primary Unsplash search query
   - Bulk fix re-run: SVG articles (WhatsApp1.svg) replaced with Unsplash bonsai photos; all 63 articles scanned, 2 additional fixed, 0 failed
+- Logo system: `services/logo_service.py` — async `generate_logo()` calls Stability AI SDXL (`stable-diffusion-xl-1024-v1-0`) at **1344×768** (landscape 1.75:1; 1024×512 unsupported by SDXL, 1344×768 is the closest valid ratio); prompt: "Wide horizontal landscape logo banner for a {topic} website, professional brand identity, minimalist icon with subtle design elements, {primary_color} dominant color, no text, no letters, no words, clean white or light background, premium quality"; SVG fallback for missing key or API error; display CSS: `width:auto; max-width:240px; height:60px; object-fit:contain` in `SiteBrand.jsx` (renderer) and `max-width:120px; height:30px` in admin Sites table; logos regenerated for all 4 sites at new dimensions
+- Auto-categories: sites with <3 categories get 4-6 AI-generated categories via Claude Haiku; Hebrew sites get Hebrew category names with romanized slugs; Bonsai (6 cats), White Noise Hub (6 cats), Shih Tzu (5 Hebrew cats) created; tattoo site already had 5 categories
+- Auto article categorization: keyword-matching assigns each published article with `category_id=null` to the best-matching site category (score = matching words in title+seo_keywords); 89 of 91 uncategorized articles assigned; `ai_review.py` now enforces category assignment for all future reviewed articles
+- Scrape job editing: `PATCH /scraper/jobs/{id}` endpoint (keywords, language, frequency_minutes, category_rules); `ScrapeJobUpdate` schema with same validators as Create; `ScrapeJobModal` extended to edit mode (seeds from existing job, site field locked, submit calls `updateJob`); "Edit" button per row in `ScrapeJobs.jsx`
+- Tattoo site (id=4 "Geometric small tattoo") keywords updated — all 8 keywords now include the word "tattoo" (e.g. "Minimalist Geometric tattoo")
 
 ### 🔲 Next Steps (priority order)
 

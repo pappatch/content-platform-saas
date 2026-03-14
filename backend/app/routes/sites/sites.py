@@ -259,6 +259,28 @@ async def create_site(
     db.commit()
     db.refresh(site)
 
+    # --- Generate logo (Stability AI with SVG fallback) ---
+    try:
+        from app.services.logo_service import generate_logo
+        scrape_kws: list[str] = []
+        for job in db.query(ScrapeJob).filter(ScrapeJob.site_id == site.id).all():
+            for kw in (job.keywords or []):
+                kw_norm = kw.lower().strip()
+                if kw_norm and kw_norm not in scrape_kws:
+                    scrape_kws.append(kw_norm)
+        logo_url = await generate_logo(
+            site.name,
+            config.get("primary_color"),
+            config.get("secondary_color"),
+            scrape_kws,
+        )
+        config["logo_url"] = logo_url
+        site.config = config
+        db.commit()
+        db.refresh(site)
+    except Exception:
+        logger.warning("create_site: logo generation failed for site %d", site.id, exc_info=True)
+
     # --- Auto-fetch default images in the background if not already set ---
     if not config.get("default_images"):
         async def _fetch_defaults(sid: int) -> None:
@@ -439,6 +461,51 @@ async def get_site_default_images(
 
     logger.info("get_site_default_images: generated %d validated images for site %d", len(images), site_id)
     return {"site_id": site_id, "images": images}
+
+
+# ---------------------------------------------------------------------------
+# Regenerate logo
+# ---------------------------------------------------------------------------
+
+@router.post("/{site_id}/regenerate-logo", response_model=SiteResponse)
+async def regenerate_site_logo(
+    site_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """
+    (Re-)generate the logo for a site via Stability AI (SVG fallback if key absent).
+    Persists result to site.config.logo_url.
+    """
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
+
+    from app.services.logo_service import generate_logo
+
+    config = dict(site.config or {})
+    scrape_kws: list[str] = []
+    seen: set[str] = set()
+    for job in db.query(ScrapeJob).filter(ScrapeJob.site_id == site_id).all():
+        for kw in (job.keywords or []):
+            kw_norm = kw.lower().strip()
+            if kw_norm and kw_norm not in seen:
+                seen.add(kw_norm)
+                scrape_kws.append(kw_norm)
+
+    logo_url = await generate_logo(
+        site.name,
+        config.get("primary_color"),
+        config.get("secondary_color"),
+        scrape_kws,
+    )
+    config["logo_url"] = logo_url
+    site.config = config
+    db.commit()
+    db.refresh(site)
+
+    logger.info("regenerate_site_logo: regenerated logo for site %d '%s'", site.id, site.name)
+    return site
 
 
 # ---------------------------------------------------------------------------

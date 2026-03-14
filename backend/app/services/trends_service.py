@@ -903,6 +903,26 @@ async def create_site_from_trend(
         db.refresh(site)
         db.refresh(job)
 
+        # --- Generate logo (Stability AI with SVG fallback) ---
+        try:
+            from app.services.logo_service import generate_logo
+            kws_for_logo = [kw.lower().strip() for kw in (keywords or [])]
+            logo_url = await generate_logo(
+                site.name,
+                config.get("primary_color"),
+                config.get("secondary_color"),
+                kws_for_logo,
+            )
+            updated_config = dict(site.config or {})
+            updated_config["logo_url"] = logo_url
+            site.config = updated_config
+            db.commit()
+            db.refresh(site)
+        except Exception:
+            logger.warning(
+                "create_site_from_trend: logo generation failed for site %d", site.id, exc_info=True
+            )
+
         logger.info(
             "create_site_from_trend: created site id=%d '%s' from trend id=%d '%s'",
             site.id, site.name, trend.id, trend.keyword,

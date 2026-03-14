@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
 from app.models.user import User
-from app.schemas.scrape_job import ScrapeJobCreate, ScrapeJobResponse
+from app.schemas.scrape_job import ScrapeJobCreate, ScrapeJobUpdate, ScrapeJobResponse
 from app.security.permissions import get_current_user, require_admin
 from app.services.scraper import scrape_and_save
 
@@ -59,6 +59,25 @@ def create_job(
         category_rules=job_data.category_rules,
     )
     db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+@router.patch("/{job_id}", response_model=ScrapeJobResponse)
+def update_job(
+    job_id: int,
+    job_data: ScrapeJobUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Update editable fields of a scrape job (keywords, language, frequency, category_rules)."""
+    job = db.query(ScrapeJob).filter(ScrapeJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scrape job not found")
+    updates = job_data.model_dump(exclude_unset=True)
+    for field, value in updates.items():
+        setattr(job, field, value)
     db.commit()
     db.refresh(job)
     return job

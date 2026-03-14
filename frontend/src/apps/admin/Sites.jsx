@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getSites, getSiteStats, deleteSite, auditImages } from '../../services/sites'
+import { getSites, getSiteStats, deleteSite, auditImages, regenerateSiteLogo } from '../../services/sites'
 import { getArticles, updateArticle } from '../../services/articles'
 import { getJobs, runJob } from '../../services/scrapeJobs'
 import SiteModal from './SiteModal'
@@ -207,6 +207,7 @@ export default function Sites() {
   const [confirmId, setConfirmId] = useState(null)
   const [pinnedSite, setPinnedSite] = useState(null)
   const [runningIds, setRunningIds] = useState(new Set())
+  const [logoRegenerating, setLogoRegenerating] = useState(new Set())
   const [auditReport, setAuditReport] = useState(null)
   const [auditRunning, setAuditRunning] = useState(false)
 
@@ -244,6 +245,19 @@ export default function Sites() {
       setConfirmId(null)
     },
   })
+
+  async function handleRegenerateLogo(siteId) {
+    if (logoRegenerating.has(siteId)) return
+    setLogoRegenerating((prev) => new Set(prev).add(siteId))
+    try {
+      await regenerateSiteLogo(siteId)
+      qc.invalidateQueries({ queryKey: ['sites'] })
+    } catch (e) {
+      console.error('Logo regeneration failed:', e)
+    } finally {
+      setLogoRegenerating((prev) => { const s = new Set(prev); s.delete(siteId); return s })
+    }
+  }
 
   async function handleRunNow(jobId) {
     if (!jobId || runningIds.has(jobId)) return
@@ -318,7 +332,12 @@ export default function Sites() {
                   <tr key={site.id} className={`transition-colors ${site.is_active ? 'hover:bg-gray-50' : 'bg-gray-50/50 opacity-60'}`}>
                     {/* Name + domain */}
                     <td className="px-4 py-3">
-                      <div className="font-medium text-gray-900">{site.name}</div>
+                      <div className="flex items-center gap-2">
+                        {site.config?.logo_url && (
+                          <img src={site.config.logo_url} alt="" style={{ width: 'auto', maxWidth: '120px', height: '30px', objectFit: 'contain' }} className="shrink-0" />
+                        )}
+                        <div className="font-medium text-gray-900">{site.name}</div>
+                      </div>
                       <a href={`https://${site.domain}`} target="_blank" rel="noopener noreferrer"
                         className="text-xs text-gray-400 hover:text-indigo-600 hover:underline">
                         {site.domain}
@@ -418,6 +437,14 @@ export default function Sites() {
                           {isRunning ? 'Running…' : 'Run'}
                         </button>
                       )}
+                      <button
+                        onClick={() => handleRegenerateLogo(site.id)}
+                        disabled={logoRegenerating.has(site.id)}
+                        className="text-violet-600 hover:text-violet-800 font-medium text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Regenerate SVG logo"
+                      >
+                        {logoRegenerating.has(site.id) ? 'Generating…' : 'Logo'}
+                      </button>
                       <button onClick={() => setModal(site)} className="text-indigo-600 hover:text-indigo-800 font-medium text-xs">
                         Edit
                       </button>

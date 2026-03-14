@@ -5,6 +5,7 @@
  */
 import { Link } from 'react-router-dom'
 import { formatDate, excerpt } from '../components/ArticleCard'
+import SiteBrand from '../components/SiteBrand'
 
 export default function TemplateC({ site, articles, categories, categoryMap, theme, pageTitle, headerExtra }) {
   const dir = site?.text_direction || 'ltr'
@@ -13,9 +14,7 @@ export default function TemplateC({ site, articles, categories, categoryMap, the
     <div dir={dir} style={{ ...theme, backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }} className="min-h-screen">
       {/* Minimal header */}
       <header className="py-12 text-center" style={{ borderBottom: '1px solid var(--color-border)' }}>
-        <Link to="/" className="text-4xl font-black tracking-tighter" style={{ color: 'var(--color-primary)' }}>
-          {site?.name}
-        </Link>
+        <SiteBrand site={site} nameClassName="text-4xl font-black tracking-tighter" nameStyle={{ color: 'var(--color-primary)' }} />
         {categories.length > 0 && (
           <div className="mt-4 flex justify-center flex-wrap gap-x-6 gap-y-1 text-sm" style={{ color: 'var(--color-muted)' }}>
             <Link to="/" className="hover:underline">All</Link>

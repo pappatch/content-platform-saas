@@ -318,6 +318,28 @@ async def ai_review_and_enrich(article_id: int) -> None:
         if image_url:
             article.main_image_url = image_url
 
+        # Auto-assign category if none set — keyword matching against category names
+        if not article.category_id:
+            cats = db.query(Category).filter(Category.site_id == article.site_id).all()
+            if cats:
+                article_text = (
+                    f"{article.title} {article.seo_keywords or ''} "
+                    f"{article.seo_description or ''}"
+                ).lower()
+                best_cat, best_score = None, 0
+                for cat in cats:
+                    # Score = number of category name words found in article text
+                    words = [w.strip() for w in cat.name.lower().split() if len(w) > 2]
+                    score = sum(1 for w in words if w in article_text)
+                    if score > best_score:
+                        best_score, best_cat = score, cat
+                if best_cat and best_score > 0:
+                    article.category_id = best_cat.id
+                    logger.info(
+                        "ai_review: auto-assigned article %d → category '%s' (score=%d)",
+                        article_id, best_cat.name, best_score,
+                    )
+
         db.commit()
 
     except Exception:
