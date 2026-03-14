@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useDirection } from '../../hooks/useDirection'
+import { useTheme } from '../../context/ThemeContext'
 
 const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', end: true },
@@ -16,6 +17,7 @@ const NAV_ITEMS = [
 export default function AdminLayout() {
   const { user, logout } = useAuth()
   const { isRtl, toggle } = useDirection()
+  const { isDark, toggleTheme } = useTheme()
   const navigate = useNavigate()
 
   function handleLogout() {
@@ -24,7 +26,7 @@ export default function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen flex bg-gray-50">
+    <div className={`min-h-screen flex ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
       {/* Sidebar */}
       <aside className="w-56 shrink-0 bg-indigo-900 text-white flex flex-col">
         <div className="px-4 py-5 text-lg font-bold tracking-wide border-b border-indigo-700">
@@ -54,6 +56,12 @@ export default function AdminLayout() {
           <Link to="/review" className="block text-xs text-indigo-300 hover:text-white py-0.5">Review →</Link>
         </div>
         <div className="px-4 py-4 border-t border-indigo-700 space-y-2">
+          <button
+            onClick={toggleTheme}
+            className="w-full text-left text-xs text-indigo-300 hover:text-white"
+          >
+            {isDark ? '☀ Light mode' : '☾ Dark mode'}
+          </button>
           <button
             onClick={toggle}
             className="w-full text-left text-xs text-indigo-300 hover:text-white"

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import ProtectedRoute from './components/ProtectedRoute'
 import Login from './pages/Login'
+import { ThemeProvider } from './context/ThemeContext'
 
 import AdminLayout from './apps/admin/AdminLayout'
 import AdminDashboard from './apps/admin/Dashboard'
@@ -22,6 +23,7 @@ import ReviewDashboard from './apps/review/Dashboard'
 
 export default function App() {
   return (
+    <ThemeProvider>
     <Routes>
       <Route path="/login" element={<Login />} />
 
@@ -74,5 +76,6 @@ export default function App() {
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/admin" replace />} />
     </Routes>
+    </ThemeProvider>
   )
 }

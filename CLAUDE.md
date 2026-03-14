@@ -169,7 +169,7 @@ Three micro-apps sharing one Vite build at port 5173:
 | `/cms/*` | Article & category editing | `editor` or `admin` |
 | `/review/*` | Review queue | any authenticated user |
 
-Shared infra: `AuthContext` (JWT in localStorage), `DirectionContext` (RTL/LTR), `@tanstack/react-query` for all API calls, axios client in `src/api/client.js`.
+Shared infra: `AuthContext` (JWT in localStorage), `DirectionContext` (RTL/LTR), `ThemeContext` (dark/light — persisted to localStorage, falls back to `admin_theme_default` platform setting), `@tanstack/react-query` for all API calls, axios client in `src/api/client.js`.
 
 **Review queue** (`apps/review/`) is split into:
 - `Dashboard.jsx` — orchestrator; owns `approveMut` (PATCH status=published) and `rejectMut` (PATCH status=removed); manages `previewId` and `confirmRejectId` state
@@ -206,7 +206,7 @@ Separate Vite app at port 5174+. Set `VITE_SITE_ID` in its `.env` to select whic
 - **Analytics** — page-view events per site/article, `created_at` timestamp
 - **Trend** — keyword, region, language, score (rank-derived 0–1), trend_date (YYYY-MM-DD), status (`new → used | dismissed`), optional `site_id` FK when used to create a site
 - **AppSetting** — key-value table for persistent feature settings. Current key: `trends_fetch_region` (ISO code or `""` for worldwide)
-- **PlatformSetting** — typed key-value table for tunable runtime parameters. Fields: key (PK), value, value_type (string/float/int/bool), description, updated_by_id (FK User), updated_at. 8 seeded defaults (see settings_service.py DEFAULTS)
+- **PlatformSetting** — typed key-value table for tunable runtime parameters. Fields: key (PK), value, value_type (string/float/int/bool), description, updated_by_id (FK User), updated_at. 9 seeded defaults (see settings_service.py DEFAULTS) including `admin_theme_default`
 
 ### Auth Flow
 
@@ -323,7 +323,9 @@ GET        /analytics
 - Trends region selector: `AppSetting` key-value model persists `trends_fetch_region`; `GET/POST /trends/settings`; grouped region catalogue via `GET /trends/regions`; region dropdown + active badge in Trending tab
 - Trends Explore tab: `GET /trends/explore` (pytrends interest/countries/queries); `GET /trends/explore/site-config`; `POST /trends/explore/create-site`; ExplorePanel with recharts LineChart + BarChart + related queries + Create Site modal
 - Architecture page: `Architecture.jsx` at `/admin/architecture` — two-tab (Flow / Architecture) embedded reference diagram; pure React + Tailwind, no external libs; Flow tab shows full Trends + Content pipelines with decision node; Architecture tab shows 4 layered boxes (External Services → Backend → Frontend/Renderer → Database)
-- Platform Settings system: `PlatformSetting` ORM model (`platform_settings` table, typed key-value with value_type/description/updated_by_id); `settings_service.py` (in-memory cache, lazy load, seed_defaults on startup); `GET /settings` + `PATCH /settings/{key}` (admin only); `Settings.jsx` panel with 4 grouped sections; all hardcoded constants in scraper.py/ai_review.py/trends_service.py/trends_worker.py replaced with `settings_service.get()` calls; auto-publish logic in ai_review.py now correctly honours both threshold and `auto_publish_enabled`
+- Platform Settings system: `PlatformSetting` ORM model (`platform_settings` table, typed key-value with value_type/description/updated_by_id); `settings_service.py` (in-memory cache, lazy load, seed_defaults on startup); `GET /settings` + `PATCH /settings/{key}` (admin only); `Settings.jsx` panel with 5 grouped sections (AI Review/Content Quality/Scraper/Trends/Interface); all hardcoded constants in scraper.py/ai_review.py/trends_service.py/trends_worker.py replaced with `settings_service.get()` calls; auto-publish logic in ai_review.py now correctly honours both threshold and `auto_publish_enabled`
+- Dark/Light mode: `ThemeContext.jsx` provides `isDark` + `toggleTheme`; persisted to `localStorage` under `admin_theme`; applies `dark` class to `<html>` for Tailwind class-based dark mode; falls back to `admin_theme_default` platform setting on first visit; toggle button added to AdminLayout sidebar; `tailwind.config.js` updated with `darkMode: 'class'`
+- Architecture page v2: updated `Architecture.jsx` — live stats bar (fetches articles + sites), clickable Flow nodes (show detail card), 6-layer Architecture tab (added Platform Settings layer), security badges, full dark mode support via `useTheme()`
 
 ### 🔲 Next Steps (priority order)
 

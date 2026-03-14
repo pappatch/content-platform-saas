@@ -115,6 +115,16 @@ DEFAULTS: list[dict] = [
             "effect on the next sleep cycle of the trends worker (no restart needed)."
         ),
     },
+    {
+        "key":         "admin_theme_default",
+        "value":       "light",
+        "value_type":  ValueType.string,
+        "description": (
+            "Default admin panel theme for all users on first visit. "
+            "Accepted values: light, dark. Individual users can override this "
+            "with the toggle in the nav bar; their choice is persisted to localStorage."
+        ),
+    },
 ]
 
 # Quick key → ValueType lookup (built once from DEFAULTS)

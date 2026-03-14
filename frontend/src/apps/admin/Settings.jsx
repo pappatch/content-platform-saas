@@ -69,6 +69,13 @@ const GROUPS = [
     ],
     note:  'Google Trends fetch schedule and site-creation limits.',
   },
+  {
+    key:   'ui',
+    label: 'Interface',
+    icon:  '🎨',
+    keys:  ['admin_theme_default'],
+    note:  'Default admin panel theme for all users on first visit (light or dark).',
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -105,11 +112,12 @@ function SettingRow({ setting }) {
   const [localValue, setLocalValue] = useState(setting.value)
   const [feedback, setFeedback] = useState(null)  // null | 'saved' | 'error:<msg>'
 
-  const isBool  = setting.value_type === 'bool'
-  const isFloat = setting.value_type === 'float'
-  const isInt   = setting.value_type === 'int'
-  const step    = isFloat ? '0.01' : '1'
-  const min     = (isFloat || isInt) ? '0' : undefined
+  const isBool   = setting.value_type === 'bool'
+  const isFloat  = setting.value_type === 'float'
+  const isInt    = setting.value_type === 'int'
+  const isString = setting.value_type === 'string'
+  const step     = isFloat ? '0.01' : '1'
+  const min      = (isFloat || isInt) ? '0' : undefined
 
   const dirty = localValue !== setting.value
 
@@ -166,8 +174,16 @@ function SettingRow({ setting }) {
               {localValue === 'true' ? 'On' : 'Off'}
             </span>
           </label>
+        ) : isString ? (
+          /* Text input for string type */
+          <input
+            type="text"
+            value={localValue}
+            onChange={(e) => { setLocalValue(e.target.value); setFeedback(null) }}
+            className="w-28 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400"
+          />
         ) : (
-          /* Number input */
+          /* Number input for float / int */
           <input
             type="number"
             value={localValue}
@@ -188,6 +204,7 @@ function SettingRow({ setting }) {
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           } disabled:opacity-60`}
         >
+
           {mut.isPending ? '…' : 'Save'}
         </button>
 
