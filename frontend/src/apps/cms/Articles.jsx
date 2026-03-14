@@ -68,6 +68,7 @@ export default function Articles() {
   const [selected, setSelected] = useState(new Set())
   const [confirmRemoveId, setConfirmRemoveId] = useState(null)
   const [confirmBulk, setConfirmBulk] = useState(false)
+  const [pinModalArticle, setPinModalArticle] = useState(null) // article object | null
 
   const params = {}
   if (siteFilter) params.site_id = siteFilter
@@ -113,6 +114,14 @@ export default function Articles() {
   const pinMut = useMutation({
     mutationFn: ({ id, is_pinned }) => updateArticle(id, { is_pinned }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['cms-articles'] }),
+  })
+
+  const pinUntilMut = useMutation({
+    mutationFn: ({ id, pinned_until }) => updateArticle(id, { pinned_until }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cms-articles'] })
+      setPinModalArticle(null)
+    },
   })
 
   async function handleBulkRemove() {
@@ -262,8 +271,13 @@ export default function Articles() {
                     >
                       {a.title}
                     </Link>
-                    {a.is_pinned && (
+                    {a.is_pinned && !a.pinned_until && (
                       <span className="text-xs text-indigo-500 font-medium">📌 Pinned</span>
+                    )}
+                    {a.pinned_until && new Date(a.pinned_until) > new Date() && (
+                      <span className="text-xs text-purple-600 font-medium">
+                        ⏱ Pinned until {new Date(a.pinned_until).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-gray-500 whitespace-nowrap">
@@ -291,10 +305,10 @@ export default function Articles() {
                       View
                     </Link>
                     <button
-                      onClick={() => pinMut.mutate({ id: a.id, is_pinned: !a.is_pinned })}
+                      onClick={() => setPinModalArticle(a)}
                       className="text-gray-500 hover:text-gray-700 font-medium"
                     >
-                      {a.is_pinned ? 'Unpin' : 'Pin'}
+                      {a.is_pinned || (a.pinned_until && new Date(a.pinned_until) > new Date()) ? 'Unpin' : 'Pin'}
                     </button>
                     <button
                       onClick={() => setConfirmRemoveId(a.id)}
@@ -331,6 +345,88 @@ export default function Articles() {
           onCancel={() => setConfirmBulk(false)}
         />
       )}
+
+      {pinModalArticle && (
+        <PinModal
+          article={pinModalArticle}
+          loading={pinUntilMut.isPending || pinMut.isPending}
+          onPin={(durationMs) => {
+            if (durationMs === 0) {
+              // unpin: clear both flags
+              pinUntilMut.mutate({ id: pinModalArticle.id, pinned_until: null })
+              pinMut.mutate({ id: pinModalArticle.id, is_pinned: false })
+            } else {
+              const until = new Date(Date.now() + durationMs).toISOString()
+              pinUntilMut.mutate({ id: pinModalArticle.id, pinned_until: until })
+            }
+          }}
+          onCancel={() => setPinModalArticle(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Pin Duration Modal ───────────────────────────────────────────────────────
+
+const PIN_DURATIONS = [
+  { label: '1 day',   ms: 86_400_000 },
+  { label: '1 week',  ms: 7 * 86_400_000 },
+  { label: '1 month', ms: 30 * 86_400_000 },
+]
+
+function PinModal({ article, loading, onPin, onCancel }) {
+  const isCurrentlyPinned =
+    article.is_pinned || (article.pinned_until && new Date(article.pinned_until) > new Date())
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+        <h3 className="text-base font-semibold text-gray-900 mb-1">
+          {isCurrentlyPinned ? 'Unpin article?' : 'Pin article'}
+        </h3>
+        <p className="text-sm text-gray-500 mb-5 line-clamp-2">{article.title}</p>
+
+        {isCurrentlyPinned ? (
+          <>
+            <p className="text-sm text-gray-600 mb-4">
+              This article is currently pinned. Remove the pin?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => onPin(0)}
+                disabled={loading}
+                className="px-4 py-2 text-sm rounded-lg bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-50"
+              >
+                {loading ? 'Saving…' : 'Unpin'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-600 mb-3">Choose how long to feature this article at the top:</p>
+            <div className="flex flex-col gap-2 mb-5">
+              {PIN_DURATIONS.map(({ label, ms }) => (
+                <button
+                  key={ms}
+                  onClick={() => onPin(ms)}
+                  disabled={loading}
+                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 text-sm font-medium text-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {label}
+                  <span className="float-right text-gray-400 font-normal">
+                    until {new Date(Date.now() + ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

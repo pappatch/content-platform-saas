@@ -34,10 +34,12 @@ export function excerpt(articleOrText, length = 120) {
  * Variants: 'default' | 'compact' | 'list'
  */
 export default function ArticleCard({ article, category, variant = 'default', style }) {
-  const { siteKeywords } = useSite()
+  const { siteKeywords, siteDefaultImages } = useSite()
   const title = article.seo_title || article.title
   const href = `/article/${article.id}`
-  const imgSrc = article.main_image_url || getDefaultImage(siteKeywords, article.id)
+  const imgSrc = article.main_image_url || getDefaultImage(siteKeywords, article.id, siteDefaultImages)
+
+  const readingTime = article.reading_time_minutes || 1
 
   if (variant === 'list') {
     return (
@@ -60,9 +62,10 @@ export default function ArticleCard({ article, category, variant = 'default', st
           <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:underline" style={{ color: 'var(--color-text)' }}>
             {title}
           </h3>
-          <time className="text-xs" style={{ color: 'var(--color-muted)' }}>
-            {formatDate(article.created_at)}
-          </time>
+          <div className="flex items-center gap-2 mt-0.5" style={{ color: 'var(--color-muted)' }}>
+            <time className="text-xs">{formatDate(article.created_at)}</time>
+            <span className="text-xs">· {readingTime} min read</span>
+          </div>
         </div>
       </Link>
     )
@@ -84,9 +87,10 @@ export default function ArticleCard({ article, category, variant = 'default', st
         <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:underline" style={{ color: 'var(--color-text)' }}>
           {title}
         </h3>
-        <time className="text-xs" style={{ color: 'var(--color-muted)' }}>
-          {formatDate(article.created_at)}
-        </time>
+        <div className="flex items-center gap-2 mt-0.5" style={{ color: 'var(--color-muted)' }}>
+          <time className="text-xs">{formatDate(article.created_at)}</time>
+          <span className="text-xs">· {readingTime} min read</span>
+        </div>
       </Link>
     )
   }
@@ -111,9 +115,10 @@ export default function ArticleCard({ article, category, variant = 'default', st
         <p className="mt-1 text-sm line-clamp-2" style={{ color: 'var(--color-muted)' }}>
           {excerpt(article)}
         </p>
-        <time className="block mt-2 text-xs" style={{ color: 'var(--color-muted)' }}>
-          {formatDate(article.created_at)}
-        </time>
+        <div className="flex items-center gap-2 mt-2" style={{ color: 'var(--color-muted)' }}>
+          <time className="text-xs">{formatDate(article.created_at)}</time>
+          <span className="text-xs">· {readingTime} min read</span>
+        </div>
       </div>
     </Link>
   )

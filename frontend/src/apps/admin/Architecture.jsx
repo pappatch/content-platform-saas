@@ -364,165 +364,211 @@ function StatsBar() {
 }
 
 // ---------------------------------------------------------------------------
+// FlowStep — clickable step with colored glow when active
+// ---------------------------------------------------------------------------
+
+/**
+ * FlowStep wraps Node with an animated glow when selected.
+ * The glow color matches the node's color palette.
+ */
+const GLOW_SHADOW = {
+  indigo: '0 0 0 2px #6366f1, 0 0 16px 4px rgba(99,102,241,0.35)',
+  blue:   '0 0 0 2px #3b82f6, 0 0 16px 4px rgba(59,130,246,0.35)',
+  sky:    '0 0 0 2px #0ea5e9, 0 0 16px 4px rgba(14,165,233,0.35)',
+  green:  '0 0 0 2px #10b981, 0 0 16px 4px rgba(16,185,129,0.35)',
+  amber:  '0 0 0 2px #f59e0b, 0 0 16px 4px rgba(245,158,11,0.35)',
+  red:    '0 0 0 2px #ef4444, 0 0 16px 4px rgba(239,68,68,0.35)',
+  purple: '0 0 0 2px #a855f7, 0 0 16px 4px rgba(168,85,247,0.35)',
+  gray:   '0 0 0 2px #6b7280, 0 0 16px 4px rgba(107,114,128,0.25)',
+  slate:  '0 0 0 2px #64748b, 0 0 16px 4px rgba(100,116,139,0.25)',
+}
+
+function FlowStep({ id, color = 'gray', icon, title, sub, wide = false, onSelect, selected }) {
+  const isActive = selected === id
+  const shadow = isActive ? GLOW_SHADOW[color] || GLOW_SHADOW.gray : undefined
+
+  return (
+    <div style={shadow ? { boxShadow: shadow, borderRadius: '0.75rem', transition: 'box-shadow 0.2s' } : { transition: 'box-shadow 0.2s' }}>
+      <Node
+        id={id}
+        color={color}
+        icon={icon}
+        title={title}
+        sub={sub}
+        wide={wide}
+        onSelect={onSelect}
+        selected={selected}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Flow tab
 // ---------------------------------------------------------------------------
 
 function FlowTab() {
+  const { isDark } = useTheme()
   const [selected, setSelected] = useState(null)
 
-  const sel = (id) => setSelected(id)
-  const nodeProps = { onSelect: sel, selected }
+  const sel = (id) => setSelected(prev => prev === id ? null : id)
+  const stepProps = { onSelect: sel, selected }
 
   return (
     <div>
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-12 justify-center min-w-max pt-2 px-4">
-
-          {/* ── LEFT: Trends Pipeline ─────────────────────────────────────── */}
-          <div className="flex flex-col items-center">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-sky-500 mb-3">
-              Trends Pipeline
-            </div>
-
-            <Node
-              id="google-trends-rss" color="sky" icon="📡"
-              title="Google Trends RSS"
-              sub="trends.google.com/trending/rss"
-              wide {...nodeProps}
-            />
-            <Down />
-            <Node
-              id="trends-worker" color="sky" icon="⏰"
-              title="trends_worker"
-              sub="interval from PlatformSettings"
-              wide {...nodeProps}
-            />
-            <Down label="reads trends_fetch_interval_hours" />
-            <Node
-              id="trend-rows-db" color="blue" icon="📊"
-              title="Trend rows (DB)"
-              sub="keyword · region · score · status: new"
-              wide {...nodeProps}
-            />
-            <Down />
-            <Node
-              id="admin-trends" color="indigo" icon="🖥️"
-              title="Admin → Trends dashboard"
-              sub="Trending tab + Explore tab"
-              wide {...nodeProps}
-            />
-            <Down />
-
-            {/* Two outcomes side by side */}
-            <div className="flex items-start gap-4 mt-1">
-              <div className="flex flex-col items-center">
-                <div className="text-[9px] text-gray-400 mb-1">Dismiss</div>
-                <Node color="gray" icon="🚫" title="status: dismissed" sub="soft-delete" />
-              </div>
-              <div className="flex flex-col items-center">
-                <div className="text-[9px] text-gray-400 mb-1">Create Site</div>
-                <Down />
-                <Node
-                  id="claude-site-config" color="green" icon="🤖"
-                  title="Claude Haiku"
-                  sub="generates site config"
-                  {...nodeProps}
-                />
-                <Down />
-                <Node
-                  id="site-created" color="green" icon="🌐"
-                  title="Site + ScrapeJob"
-                  sub="status: used · site_id linked"
-                  {...nodeProps}
-                />
-              </div>
-            </div>
+      {/* ── Main Content Pipeline (vertical, centered) ── */}
+      <div className="overflow-x-auto pb-2">
+        <div className="flex flex-col items-center min-w-max mx-auto pt-2 px-4">
+          <div className={`text-[10px] font-bold uppercase tracking-widest mb-4 ${isDark ? 'text-amber-400' : 'text-amber-500'}`}>
+            Content Pipeline
           </div>
 
-          {/* ── RIGHT: Content Pipeline ───────────────────────────────────── */}
-          <div className="flex flex-col items-center">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-3">
-              Content Pipeline
-            </div>
+          {/* Sources */}
+          <div className="flex items-end gap-3 mb-1">
+            <FlowStep id="tavily"     color="amber" icon="🔍" title="Tavily API"  sub="primary · ai_score" {...stepProps} />
+            <FlowStep id="google-cse" color="amber" icon="🔎" title="Google CSE" sub="secondary fallback" {...stepProps} />
+          </div>
+          <Down />
 
-            {/* Sources row */}
-            <div className="flex items-end gap-3 mb-1">
-              <Node id="tavily"     color="amber" icon="🔍" title="Tavily API"  sub="primary · ai_score" {...nodeProps} />
-              <Node id="google-cse" color="amber" icon="🔎" title="Google CSE" sub="secondary fallback" {...nodeProps} />
-            </div>
-            <Down />
-            <Node
-              id="scrape-worker" color="amber" icon="⏰"
-              title="scrape_worker"
-              sub="every 60s · keyword search → HTML fetch"
-              wide {...nodeProps}
-            />
-            <Down label="max_searches_per_job (PlatformSettings) · SSRF guard · quality gates" />
-            <Node
-              id="articles-pending" color="gray" icon="📝"
-              title="Articles"
-              sub="status: pending · content_html"
-              wide {...nodeProps}
-            />
-            <Down />
-            <Node
-              id="review-worker" color="purple" icon="⏰"
-              title="review_worker"
-              sub="every 30s · picks pending articles"
-              wide {...nodeProps}
-            />
-            <Down />
-            <Node
-              id="claude-review" color="purple" icon="🤖"
-              title="Claude Haiku AI Review"
-              sub="rewrite · score · SEO · translate · image"
-              wide {...nodeProps}
-            />
+          <FlowStep id="scrape-worker" color="amber" icon="⏰"
+            title="scrape_worker" sub="every 60s · keyword search → HTML fetch"
+            wide {...stepProps}
+          />
+          <Down label="max_searches_per_job · SSRF guard · quality gates" />
 
-            {/* Score decision */}
-            <Diamond
-              id="score-gate"
-              title="ai_score ≥ threshold?"
-              sub="PlatformSettings: ai_review_threshold"
-              onSelect={sel} selected={selected}
-            />
+          <FlowStep id="articles-pending" color="gray" icon="📝"
+            title="Articles" sub="status: pending · content_html"
+            wide {...stepProps}
+          />
+          <Down />
 
-            {/* Two branches */}
-            <div className="flex items-start gap-6 mt-2">
+          <FlowStep id="review-worker" color="purple" icon="⏰"
+            title="review_worker" sub="every 30s · picks pending articles"
+            wide {...stepProps}
+          />
+          <Down />
 
-              {/* Auto-publish branch */}
-              <div className="flex flex-col items-center">
-                <div className="text-[10px] font-semibold text-emerald-600 mb-1">Yes ✓ auto-publish</div>
-                <Down />
-                <Node id="auto-published" color="green" icon="✅" title="published" sub="auto-published" {...nodeProps} />
-                <Down />
-                <Node id="site-renderer" color="sky" icon="🖥️" title="Site Renderer" sub="port 5174+ · VITE_SITE_ID" {...nodeProps} />
-                <Down />
-                <Node id="public-site" color="green" icon="🏠" title="Public Site" sub="template A–E · RTL-aware" {...nodeProps} />
+          <FlowStep id="claude-review" color="purple" icon="🤖"
+            title="Claude Haiku AI Review" sub="rewrite · score · SEO · translate · image"
+            wide {...stepProps}
+          />
+
+          {/* Score decision */}
+          <Diamond
+            id="score-gate"
+            title="ai_score ≥ threshold?"
+            sub="PlatformSettings: ai_review_threshold"
+            onSelect={sel} selected={selected}
+          />
+
+          {/* Two branches */}
+          <div className="flex items-start gap-8 mt-2">
+            {/* Auto-publish */}
+            <div className="flex flex-col items-center">
+              <div className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                Yes ✓ auto-publish
               </div>
+              <Down />
+              <FlowStep id="auto-published" color="green" icon="✅" title="published" sub="auto-published" {...stepProps} />
+              <Down />
+              <FlowStep id="site-renderer" color="sky" icon="🖥️" title="Site Renderer" sub="port 5174+ · VITE_SITE_ID" {...stepProps} />
+              <Down />
+              <FlowStep id="public-site" color="green" icon="🏠" title="Public Site" sub="template A–E · RTL-aware" {...stepProps} />
+            </div>
 
-              {/* Human review branch */}
-              <div className="flex flex-col items-center">
-                <div className="text-[10px] font-semibold text-amber-600 mb-1">No ✗ human review</div>
-                <Down />
-                <Node id="stays-pending" color="amber" icon="🕐" title="stays pending" sub="score &lt; threshold" {...nodeProps} />
-                <Down />
-                <Node id="cms-review" color="indigo" icon="📋" title="CMS · Review app" sub="port 5173 · editor/admin" {...nodeProps} />
-                <Down label="approve or reject" />
-                <div className="flex items-start gap-3 mt-1">
-                  <Node color="green" icon="✅" title="published" sub="PATCH status=published" />
-                  <Node color="red"   icon="🗑️" title="removed"   sub="PATCH status=removed" />
-                </div>
+            {/* Human review */}
+            <div className="flex flex-col items-center">
+              <div className={`text-[10px] font-semibold mb-1 ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+                No ✗ human review
+              </div>
+              <Down />
+              <FlowStep id="stays-pending" color="amber" icon="🕐" title="stays pending" sub="score &lt; threshold" {...stepProps} />
+              <Down />
+              <FlowStep id="cms-review" color="indigo" icon="📋" title="CMS · Review app" sub="port 5173 · editor/admin" {...stepProps} />
+              <Down label="approve or reject" />
+              <div className="flex items-start gap-3 mt-1">
+                <Node color="green" icon="✅" title="published" sub="PATCH status=published" />
+                <Node color="red"   icon="🗑️" title="removed"   sub="PATCH status=removed" />
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Step detail panel */}
+      {/* Step detail panel — expands below the diagram */}
       {selected && (
         <StepDetail stepId={selected} onClose={() => setSelected(null)} />
       )}
+
+      {/* ── Trends Sub-flow Bar (horizontal) ── */}
+      <div className={`mt-8 rounded-2xl border-2 p-4 overflow-x-auto
+        ${isDark ? 'border-sky-800 bg-sky-950/30' : 'border-sky-200 bg-sky-50/60'}`}
+      >
+        <div className={`text-[10px] font-bold uppercase tracking-widest mb-3
+          ${isDark ? 'text-sky-400' : 'text-sky-600'}`}
+        >
+          Trends Pipeline
+        </div>
+        <div className="flex items-center gap-1 min-w-max flex-wrap">
+          <FlowStep id="google-trends-rss" color="sky" icon="📡"
+            title="Google Trends RSS" sub="RSS feed · no API key"
+            {...stepProps}
+          />
+          <Right />
+          <FlowStep id="trends-worker" color="sky" icon="⏰"
+            title="trends_worker" sub="interval from PlatformSettings"
+            {...stepProps}
+          />
+          <Right />
+          <FlowStep id="trend-rows-db" color="blue" icon="📊"
+            title="Trend rows (DB)" sub="keyword · region · status: new"
+            {...stepProps}
+          />
+          <Right />
+          <FlowStep id="admin-trends" color="indigo" icon="🖥️"
+            title="Admin → Trends" sub="Trending + Explore tabs"
+            {...stepProps}
+          />
+          <Right />
+          {/* Outcomes */}
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-1">
+              <Node color="gray" icon="🚫" title="Dismiss" sub="status: dismissed" />
+            </div>
+            <div className="flex items-center gap-1">
+              <FlowStep id="claude-site-config" color="green" icon="🤖"
+                title="Claude Haiku" sub="site config"
+                {...stepProps}
+              />
+              <Right />
+              <FlowStep id="site-created" color="green" icon="🌐"
+                title="Site + ScrapeJob" sub="status: used"
+                {...stepProps}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Security badges row ── */}
+      <div className={`mt-4 rounded-xl border p-3 flex flex-wrap gap-2
+        ${isDark ? 'border-gray-700 bg-gray-800/40' : 'border-gray-200 bg-gray-50'}`}
+      >
+        <span className={`text-[10px] font-bold uppercase tracking-widest self-center mr-1
+          ${isDark ? 'text-gray-400' : 'text-gray-400'}`}
+        >
+          Security
+        </span>
+        {[
+          'JWT + bcrypt auth',
+          'Role-based access',
+          'SSRF protection',
+          'HTML sanitizer (XSS)',
+          'Pydantic v2 validation',
+          'Alembic schema migrations',
+          'API keys via env vars only',
+        ].map(label => <SecurityBadge key={label} label={label} />)}
+      </div>
     </div>
   )
 }

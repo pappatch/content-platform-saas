@@ -150,6 +150,7 @@ backend/
       scraper.py        # Tavily + Google CSE → full HTML fetch → Article save
       ai_review.py      # Claude Haiku review + rewrite + scoring + translation
       image_service.py  # Unsplash API enrichment for articles missing main_image_url
+      image_validator.py # HEAD-check validation + retry/fallback for article images
       trends_service.py # pytrends fetch → dedup → DB; AI site config generation
     utils/
       sanitize.py       # HTML sanitizer blocking XSS / script injection
@@ -157,6 +158,7 @@ backend/
       scrape_worker.py  # Background loop (60s): runs due scrape jobs
       review_worker.py  # Background loop (30s): AI review of pending articles
       trends_worker.py  # Background loop (5h): fetches Google Trends per region
+      image_worker.py   # Startup pass + loop (6h): validates and fixes article images
 ```
 
 ### Frontend (`frontend/src/`)
@@ -189,8 +191,8 @@ Shared infra: `AuthContext` (JWT in localStorage), `DirectionContext` (RTL/LTR),
 Separate Vite app at port 5174+. Set `VITE_SITE_ID` in its `.env` to select which site to render. Fetches from `/public/` endpoints — no auth required.
 
 - **5 templates:** A (Newspaper), B (Magazine), C (Blog), D (Cards), E (Sidebar)
-- `SiteContext` — fetches site + articles + categories; derives `siteKeywords` from site name + DEFAULT_KEYWORDS; exposes via context
-- `utils/defaultImages.js` — `getDefaultImage(keywords, index)` cycles 5 Unsplash keywords by article ID; used as fallback when `main_image_url` is null
+- `SiteContext` — fetches site + articles + categories; derives `siteKeywords` from `site.scrape_keywords` (job keywords from API) first, then category names, tagline words, DEFAULT_KEYWORDS; exposes via context
+- `utils/defaultImages.js` — `getDefaultImage(keywords, index)` cycles keywords by article ID; used as fallback when `main_image_url` is null
 - All templates use `article.main_image_url || getDefaultImage(siteKeywords, article.id)` — never a broken image
 - CSS custom properties for per-site brand colors, set dynamically from `site.config`
 - Full RTL support: `tailwindcss-rtl` + `dir={site.text_direction}` on root element
@@ -201,7 +203,7 @@ Separate Vite app at port 5174+. Set `VITE_SITE_ID` in its `.env` to select whic
 - **User** — roles `admin | editor | viewer`, bcrypt password, JWT auth
 - **Site** — `domain` (unique), `template_id` (template-a…e), `config` JSON (colors), `language` (en/he/ar/fr), auto-derived `text_direction` (RTL for he/ar)
 - **Category** — scoped per site, URL `slug`
-- **Article** — belongs to Site + optional Category/editor. Status: `pending → published | removed`. Key fields: `content_html` (Text), `main_image_url`, `ai_score` (0–1), `ai_flags`, `is_pinned`, `pin_order`, `translated_from`, all SEO fields (`seo_title`, `seo_description`, `seo_keywords`)
+- **Article** — belongs to Site + optional Category/editor. Status: `pending → published | removed`. Key fields: `content_html` (Text), `main_image_url`, `ai_score` (0–1), `ai_flags`, `is_pinned`, `pin_order`, `pinned_until` (nullable DateTime — timed feature; public API sorts these first), `reading_time_minutes` (@property, computed), `translated_from`, all SEO fields (`seo_title`, `seo_description`, `seo_keywords`)
 - **ScrapeJob** — `keywords` (JSON array), `language`, `frequency_minutes`, `category_rules`, `status`, `last_error`
 - **Analytics** — page-view events per site/article, `created_at` timestamp
 - **Trend** — keyword, region, language, score (rank-derived 0–1), trend_date (YYYY-MM-DD), status (`new → used | dismissed`), optional `site_id` FK when used to create a site
@@ -246,6 +248,10 @@ POST   /auth/login
 GET    /auth/me
 
 GET|POST|PATCH|DELETE  /sites
+GET                    /sites/stats           # per-site article counts, pin counts, job status (admin)
+POST                   /sites/ai-preview      # AI-generated site config preview (admin)
+POST                   /sites/{id}/ai-enrich  # fill missing tagline/about/categories via Claude (admin)
+GET                    /sites/{id}/default-images  # fetch+persist 5 curated Unsplash images (admin)
 
 GET|POST|PATCH|DELETE  /cms/articles
 GET                    /cms/articles/stats
@@ -254,7 +260,7 @@ GET|POST|PATCH|DELETE  /cms/categories
 GET|POST|DELETE        /scraper/jobs
 POST                   /scraper/jobs/{id}/run
 
-GET    /public/sites/{id}
+GET    /public/sites/{id}               # includes scrape_keywords[] from site's ScrapeJobs
 GET    /public/sites/{id}/articles      # pinned articles first
 GET    /public/articles/{id}
 GET    /public/sites/{id}/categories
@@ -276,6 +282,7 @@ GET        /settings              # list all platform settings (admin)
 PATCH      /settings/{key}        # update one setting (admin, validates value_type)
 
 GET|PATCH  /admin/users
+POST       /admin/images/audit    # scan + fix broken/missing article images (admin)
 POST       /analytics/track
 GET        /analytics
 ```
@@ -326,18 +333,62 @@ GET        /analytics
 - Platform Settings system: `PlatformSetting` ORM model (`platform_settings` table, typed key-value with value_type/description/updated_by_id); `settings_service.py` (in-memory cache, lazy load, seed_defaults on startup); `GET /settings` + `PATCH /settings/{key}` (admin only); `Settings.jsx` panel with 5 grouped sections (AI Review/Content Quality/Scraper/Trends/Interface); all hardcoded constants in scraper.py/ai_review.py/trends_service.py/trends_worker.py replaced with `settings_service.get()` calls; auto-publish logic in ai_review.py now correctly honours both threshold and `auto_publish_enabled`
 - Dark/Light mode: `ThemeContext.jsx` provides `isDark` + `toggleTheme`; persisted to `localStorage` under `admin_theme`; applies `dark` class to `<html>` for Tailwind class-based dark mode; falls back to `admin_theme_default` platform setting on first visit; toggle button added to AdminLayout sidebar; `tailwind.config.js` updated with `darkMode: 'class'`
 - Architecture page v2: updated `Architecture.jsx` — live stats bar (fetches articles + sites), clickable Flow nodes (show detail card), 6-layer Architecture tab (added Platform Settings layer), security badges, full dark mode support via `useTheme()`
+- `pinned_until` timed pinning: nullable `DateTime` on `Article`; Alembic migration `f6a7b8c9d0e1`; public sort: `pinned_until > now()` → `is_pinned` → chronological; `_pinned_until_active()` helper handles SQLite naive datetime; `pinned_until` in `ArticleCreate`, `ArticleUpdate`, `ArticleListResponse`
+- Reading time: `@property reading_time_minutes` on `Article` ORM (strips HTML, counts words ÷ 200 wpm, min 1); exposed via Pydantic `from_attributes`; `readingTime.js` in `site-renderer/src/utils/`; shown on all `ArticleCard` variants and `ArticleDetail`
+- TemplateB v2 (premium magazine): sticky scroll-aware header, hero ≥70vh with gradient + countdown badge (`PinnedCountdown` updates every 60s), spotlight 2-col row, 3-col article grid, `SiteFooter` with `site.config.about` / tagline / category links / "Powered by"
+- Related articles in `ArticleDetail`: 3 articles same category → same site fallback; client-side from `useSite().articles`; rendered as `ArticleCard` grid
+- SEO in `ArticleDetail`: `useEffect` sets `document.title`, upserts Open Graph + Twitter Card meta tags, injects/removes JSON-LD Article schema on mount/unmount
+- AI site config enrichment: `trends_service.py` `generate_site_config()` now produces `config.about`, `config.tagline`, `config.default_category_names`; stored in `site.config` JSON column
+- CMS pin management: "Pin" button in `Articles.jsx` opens `PinModal` with 1d/1w/1m duration selector (shows expiry date); `pinUntilMut` sends `PATCH` with ISO datetime; expiry badge shown in table row; "Unpin" clears both `pinned_until` and `is_pinned`
+- TemplateB hero height reduced: `h-40 md:h-56` Tailwind classes (was `minHeight: 72vh`)
+- `InfiniteFeed.jsx` — generic paginated feed component: `articles` + `renderItem` + `pageSize` (default 10) + `gridClassName`; IntersectionObserver auto-loads next page with 300px rootMargin; "Load more" button as manual fallback; grid and sentinel are separate DOM siblings so grid layout is unbroken. Used in TemplateB "More Stories" section (pageSize=9 for 3-col grid alignment)
+- `RelatedArticles.jsx` — standalone component that reads `articles` + `categoryMap` from `useSite()` directly; uses `Number(article.id)` for safe int comparison against list; same-category priority → site fallback; renders as `ArticleCard` grid
+- `Footer.jsx` — standalone footer component that reads from `useSite()`; renders on every page; `buildAboutFallback()` uses `siteKeywords` when `config.about` is empty; replaces the inline `SiteFooter` in TemplateB and is also rendered by `ArticleDetail`
+- `ArticleDetail.jsx` updated: inline related-articles and footer sections replaced with `<RelatedArticles>` and `<Footer>` components; footer now appears on all `/article/:id` pages
+- `SiteContext.jsx` siteKeywords enriched: builds from site name → `config.default_category_names` → loaded category names → tagline words (>4 chars) → generic `DEFAULT_KEYWORDS` fallbacks; deduped with `Set`
+- `defaultImages.js` DEFAULT_KEYWORDS changed from site-specific shih-tzu terms to generic `['nature', 'landscape', 'city', 'people', 'travel']`
+- **Sites admin v2 (`Sites.jsx`)**: redesigned table with stats columns — template badge (colour-coded per template), language + direction badges, article count (published/pending), active pin count (clickable opens PinnedModal), last scrape time + job status badge + error tooltip; Preview link (`http://localhost:${5173 + site.id}`) per site; inline "Run Now" button triggers `POST /scraper/jobs/{id}/run`; `getSiteStats` query with 15s refetch; `PinnedModal` fetches published articles, lists pinned ones with "Unpin" button
+- **SiteModal.jsx v2**: new "Content" section with tagline (80-char text input), about (300-char textarea), default_category_names (`TagInput` component — Enter/comma adds tag, Backspace removes, × per tag); "✦ Generate with AI" button calls `POST /sites/ai-preview` and backfills tagline/about/categories/colors/template; `aiLoading` + `aiError` state
+- **`services/sites.js` additions**: `getSiteStats()` → `GET /sites/stats`; `previewSiteConfig(name, language, keywords)` → `POST /sites/ai-preview`
+- **`POST /sites` backend enrichment**: route changed to `async def`; if `config.about` or `config.tagline` missing, calls `generate_site_config()` (best-effort, all exceptions caught + logged); after site save, auto-creates up to 5 `Category` rows from `config.default_category_names` (slugified, skips duplicates)
+- **`GET /sites/stats` backend**: aggregates article counts by status, active pin count (`is_pinned OR pinned_until > utcnow()`), and latest ScrapeJob info per site; registered before `/{site_id}` to avoid FastAPI path-param conflict
+- **`POST /sites/ai-preview` backend**: async route registered before `/{site_id}`; delegates to `generate_site_config(keyword, language)`; returns `SiteConfigPreview`
+- **Settings UI**: `admin_theme_default` renders as `<select>` (light/dark) instead of free-text input; controlled via `SELECT_OPTIONS` map in `Settings.jsx`; save button enabled for select-type settings
+- **Architecture.jsx FlowTab v2**: `FlowStep` component wraps `Node` with `GLOW_SHADOW` box-shadow on active; Trends pipeline moved to horizontal sub-flow bar at bottom; security badges row below flow; detail card still expands below diagram on click
+- **`POST /sites/{id}/ai-enrich`**: async route that fills missing tagline/about/default_category_names via Claude Haiku; auto-creates Category rows from result; requires admin; registered before `PATCH /{site_id}`
+- **`GET /sites/{id}/default-images`**: builds keyword list from site name + categories + tagline; calls Unsplash for 5 images; persists to `site.config.default_images`; returns `{site_id, images}`
+- **SiteModal.jsx**: yellow warning banner when editing site with missing tagline/about/categories ("Some fields are missing — would you like AI to fill them automatically?"); "Yes" calls `POST /sites/{id}/ai-enrich` then merges result into form; Default Images section shows 5 thumbnails with per-slot "Replace" button; "Fetch images" button calls `GET /sites/{id}/default-images`
+- **`defaultImages.js` updated**: `getDefaultImage(keywords, index, storedImages=null)` — prefers `storedImages` (from `site.config.default_images`) over keyword-based Unsplash redirects
+- **`SiteContext.jsx`**: exposes `siteDefaultImages` (from `site.config.default_images`, or null); `ArticleCard` uses it as third arg to `getDefaultImage`
+- **`POST /admin/images/audit`**: scans published articles for null/noise/broken images; HEAD-checks URLs with 5s timeout; calls Unsplash image service for replacements; returns `{total_inspected, missing, noise, broken, fixed, fix_failed, details[]}`; hard limit of 200 articles per run; registered in `main.py`
+- **Sites.jsx Image Audit**: "🖼 Image Audit" button in header; `auditImages()` service call; `AuditModal` shows summary stats + per-article issue list with before/after thumbnails
+- **Trend-based site category creation**: `create_site_from_trend()` in `trends_service.py` now auto-creates Category rows from `config.default_category_names` after site is flushed to DB (same logic as `POST /sites` route)
+- **`image_validator.py`** (`services/`): `is_valid_image_url(url)` — pattern check (noise RE) → trusted-CDN fast-path → HEAD request (5s timeout, follow_redirects=True) → validates content-type `image/*` and Content-Length > 5 KB; `validate_and_fix_article_image(article_id, current_url, keywords, site_defaults)` — retries up to 2 keyword variants via Unsplash, then falls back to `site.config.default_images`
+- **`image_worker.py`** (`workers/`): background task started at startup (10s delay) and every 6 hours; scans ALL published articles ordered nulls-first; skips valid images; fixes broken/missing via `validate_and_fix_article_image`; rate-limited to 1 article/second; registered in `main.py` lifespan alongside other workers
+- **`ai_review.py` image pipeline**: replaced simple `enrich_article_images` call with `validate_and_fix_article_image` — validates existing `main_image_url` first, retries with keyword variants, falls back to `site.config.default_images`; published articles never left without an image
+- **`GET /sites/{id}/default-images` improved**: appends "professional photography" to each keyword before querying Unsplash; validates each result with `is_valid_image_url` before saving; retries with bare keyword then Unsplash redirect fallback
+- **`POST /sites` auto-default-images**: after creating a site, if `config.default_images` is absent, fires `asyncio.create_task()` to fetch 5 curated images in the background (client not blocked)
+- **`defaultImages.js` three-tier fallback**: Tier 1 = `storedImages` (site.config.default_images), Tier 2 = keyword Unsplash redirect, Tier 3 = `HARDCODED_FALLBACKS` (5 permanent `source.unsplash.com/featured/?{topic}` URLs); `getDefaultImage()` always returns a non-null string
+- **Bulk image fix run**: 63 published articles scanned on 2026-03-14; 22 fixed, 39 already valid, 2 failed (no Unsplash results); image_worker will retry on next cycle
+- **Image specificity overhaul** (2026-03-14):
+  - `GET /public/sites/{id}` returns `scrape_keywords[]` — aggregated from site's ScrapeJob rows, deduped, order preserved; `SitePublicResponse` schema extends `SiteResponse`
+  - `SiteContext.jsx` uses `site.scrape_keywords` as primary `siteKeywords` source (before category names / tagline / defaults); ensures Unsplash fallbacks are topic-specific (e.g. "bonsai tree" not "nature")
+  - `image_service.py` refactored: `_fetch_unsplash(article_id, query)` private helper; `enrich_article_images(article_id, keywords: str | list[str])` — when list, tries most-specific keyword first, broadens only on no-results
+  - `image_validator.py`: SVG URLs added to `_NOISE_RE` (SVGs are logos/graphics, not article photos); `validate_and_fix_article_image` simplified — passes keyword list directly to `enrich_article_images` (no more separate variant loop)
+  - `image_worker.py`: loads scrape-job keywords per site; `_is_mismatched_image(url, site_kws)` detects hardcoded fallback URLs (`source.unsplash.com/featured/?`) and cross-topic animal terms; articles with valid-but-mismatched images are now replaced; uses site scrape keywords as primary Unsplash search query
+  - Bulk fix re-run: SVG articles (WhatsApp1.svg) replaced with Unsplash bonsai photos; all 63 articles scanned, 2 additional fixed, 0 failed
 
 ### 🔲 Next Steps (priority order)
 
 1. **Bulk actions in CMS** — checkboxes partially exist in `Articles.jsx` but need backend: `PATCH /cms/articles/bulk` accepting array of IDs + action (publish/remove/reassign-category).
 
-2. **Pin management UI** — `is_pinned` / `pin_order` fields exist on Article; need drag-and-drop or ordering UI in the CMS. Public API already returns pinned articles first.
+2. **Pin order drag-and-drop** — `is_pinned` / `pin_order` fields exist on Article; `pinned_until` timed pinning done; still need drag-and-drop ordering UI for editorial `is_pinned` / `pin_order`.
+
+3. **InfiniteFeed for other templates** — TemplateB uses InfiniteFeed; Templates A/C/D/E still render all articles at once. Consider applying InfiniteFeed to their article lists too.
 
 3. **Analytics enhancement** — per-article page views, per-site traffic trends, unique visitor estimation. `POST /analytics/track` is already called by the renderer; data is collected but not fully surfaced.
 
-4. **Scrape job status feedback** — `status` (pending/running/done/failed) and `last_error` fields exist on ScrapeJob but the admin UI doesn't show errors or last-run time clearly.
-
-5. **Tests** — pytest infrastructure set up, auth tests exist. Need: scraper tests, AI review tests (mocked Anthropic client), public API integration tests.
+4. **Tests** — pytest infrastructure set up, auth tests exist. Need: scraper tests, AI review tests (mocked Anthropic client), public API integration tests.
 
 6. **Postgres migration** — SQLite for dev; switch `DATABASE_URL` to RDS Postgres for production. No code changes needed — Alembic handles the schema.
 

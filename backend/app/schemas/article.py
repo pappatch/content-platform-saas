@@ -16,6 +16,7 @@ class ArticleCreate(BaseModel):
     translated_from: Optional[str] = None
     is_pinned: bool = False
     pin_order: Optional[int] = None
+    pinned_until: Optional[datetime] = None
     site_id: int
     category_id: Optional[int] = None
     editor_id: Optional[int] = None
@@ -33,6 +34,7 @@ class ArticleUpdate(BaseModel):
     translated_from: Optional[str] = None
     is_pinned: Optional[bool] = None
     pin_order: Optional[int] = None
+    pinned_until: Optional[datetime] = None
     category_id: Optional[int] = None
     editor_id: Optional[int] = None
 
@@ -52,6 +54,9 @@ class ArticleListResponse(BaseModel):
     translated_from: Optional[str]
     is_pinned: bool
     pin_order: Optional[int]
+    pinned_until: Optional[datetime]
+    # Reading time computed server-side from content_html (Article.reading_time_minutes property)
+    reading_time_minutes: int = 1
     site_id: int
     category_id: Optional[int]
     editor_id: Optional[int]

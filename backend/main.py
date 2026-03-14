@@ -15,9 +15,11 @@ from app.routes.scraper.jobs import router as scraper_router
 from app.routes.admin.analytics import router as analytics_router
 from app.routes.public.public import router as public_router
 from app.routes.admin.users import router as admin_users_router
+from app.routes.admin.images import router as admin_images_router
 from app.workers.scrape_worker import worker_loop
 from app.workers.review_worker import review_worker_loop
 from app.workers.trends_worker import trends_worker_loop
+from app.workers.image_worker import image_worker_loop
 from app.routes.trends import router as trends_router
 from app.routes.settings import router as settings_router
 import app.models
@@ -46,6 +48,7 @@ async def lifespan(app: FastAPI):
     scrape_task  = asyncio.create_task(worker_loop())
     review_task  = asyncio.create_task(review_worker_loop())
     trends_task  = asyncio.create_task(trends_worker_loop())
+    image_task   = asyncio.create_task(image_worker_loop())
     logger.info("Application startup complete")
     try:
         yield
@@ -53,7 +56,8 @@ async def lifespan(app: FastAPI):
         scrape_task.cancel()
         review_task.cancel()
         trends_task.cancel()
-        for task in (scrape_task, review_task, trends_task):
+        image_task.cancel()
+        for task in (scrape_task, review_task, trends_task, image_task):
             try:
                 await task
             except asyncio.CancelledError:
@@ -90,6 +94,7 @@ app.include_router(scraper_router)
 app.include_router(analytics_router)
 app.include_router(public_router)
 app.include_router(admin_users_router)
+app.include_router(admin_images_router)
 app.include_router(trends_router)
 app.include_router(settings_router)
 

@@ -50,6 +50,7 @@ from app.config import get_settings
 from app.database import SessionLocal
 from app.services import settings_service
 from app.models.app_setting import AppSetting
+from app.models.category import Category
 from app.models.site import Site, SiteLanguage, TextDirection, RTL_LANGUAGES
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
 from app.models.trend import Trend, TrendStatus
@@ -442,6 +443,29 @@ _SITE_CONFIG_TOOL = {
                     "Include the trending keyword plus closely related terms."
                 ),
             },
+            "about": {
+                "type": "string",
+                "description": (
+                    "2-3 sentence description of the site for the footer About section. "
+                    "Describe what the site covers and who it is for. Max 300 characters."
+                ),
+            },
+            "tagline": {
+                "type": "string",
+                "description": (
+                    "Short, catchy tagline shown under the site name. "
+                    "E.g. 'Your daily source for bonsai inspiration'. Max 80 characters."
+                ),
+            },
+            "default_category_names": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "3–5 category names relevant to the site topic. "
+                    "E.g. ['Beginners', 'Techniques', 'Inspiration', 'Tools']. "
+                    "These seed the CMS category suggestions."
+                ),
+            },
         },
         "required": [
             "site_name", "domain_slug", "description", "template_id",
@@ -724,8 +748,13 @@ async def generate_site_config(keyword: str, language: str) -> SiteConfigPreview
                 language=language,
                 template_id=data.get("template_id", "template-a"),
                 config={
-                    "primary_color":   data.get("primary_color", "#6366f1"),
-                    "secondary_color": data.get("secondary_color", "#10b981"),
+                    "primary_color":           data.get("primary_color", "#6366f1"),
+                    "secondary_color":         data.get("secondary_color", "#10b981"),
+                    "about":                   str(data.get("about", ""))[:300],
+                    "tagline":                 str(data.get("tagline", ""))[:80],
+                    "default_category_names":  [
+                        str(c)[:60] for c in data.get("default_category_names", [])[:5]
+                    ],
                 },
                 keywords=[str(k)[:100] for k in data.get("keywords", [keyword])[:10]],
                 description=str(data.get("description", ""))[:160],
@@ -798,7 +827,13 @@ async def create_site_from_trend(
                 domain_slug=re.sub(r"\s+", "-", trend.keyword.lower())[:40],
                 language=trend.language,
                 template_id="template-a",
-                config={"primary_color": "#6366f1", "secondary_color": "#10b981"},
+                config={
+                    "primary_color":          "#6366f1",
+                    "secondary_color":        "#10b981",
+                    "about":                  f"Latest news and updates about {trend.keyword}.",
+                    "tagline":                f"Your source for {trend.keyword} news",
+                    "default_category_names": ["News", "Analysis", "Features"],
+                },
                 keywords=[trend.keyword],
                 description=f"Latest news and updates about {trend.keyword}.",
             )
@@ -834,6 +869,20 @@ async def create_site_from_trend(
         )
         db.add(site)
         db.flush()  # get site.id before creating the job
+
+        # --- Auto-create initial categories from default_category_names ---
+        for cat_name in (config.get("default_category_names") or [])[:5]:
+            if not cat_name or not cat_name.strip():
+                continue
+            slug = re.sub(r"[^a-z0-9]+", "-", cat_name.lower()).strip("-")
+            if not slug:
+                continue
+            exists = db.query(Category).filter(
+                Category.site_id == site.id,
+                Category.slug == slug,
+            ).first()
+            if not exists:
+                db.add(Category(name=cat_name.strip(), slug=slug, site_id=site.id))
 
         # --- Create ScrapeJob ---
         job = ScrapeJob(

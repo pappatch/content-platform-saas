@@ -54,14 +54,63 @@ export function SiteProvider({ children }) {
     [siteQuery.data]
   )
 
-  // Derive keywords from site name for use in default image fallbacks.
-  // e.g. "Shih Tzu" → ['shih tzu', 'dog', 'puppy', 'pet', 'cute dog']
+  // Build a site-specific keyword list for default image fallbacks.
+  //
+  // Priority:
+  //   1. Scrape-job keywords from the API (most specific — these are the actual
+  //      search terms used to find content for the site, e.g. ["bonsai tree",
+  //      "Japanese art tree"]).  Comes from GET /public/sites/{id}.scrape_keywords
+  //      which is populated server-side from the site's ScrapeJob rows.
+  //   2. AI-generated category names (config.default_category_names)
+  //   3. Loaded category names from DB
+  //   4. Tagline significant words (length > 4)
+  //   5. Generic DEFAULT_KEYWORDS as last-resort variety
+  //
+  // The scrape keywords are always placed first so `getDefaultImage(keywords, article.id)`
+  // cycles through topic-specific terms before ever reaching generic fallbacks.
   const siteKeywords = useMemo(() => {
-    const name = siteQuery.data?.name
-    if (!name) return DEFAULT_KEYWORDS
-    const nameKeyword = name.toLowerCase()
-    return [nameKeyword, ...DEFAULT_KEYWORDS.filter((k) => k !== nameKeyword)]
-  }, [siteQuery.data?.name])
+    const site = siteQuery.data
+    if (!site) return DEFAULT_KEYWORDS
+
+    const seen = new Set()
+    const keywords = []
+
+    function push(k) {
+      const norm = k.toLowerCase().trim()
+      if (norm && !seen.has(norm)) {
+        seen.add(norm)
+        keywords.push(norm)
+      }
+    }
+
+    // 1. Scrape-job keywords (primary — topic-specific)
+    for (const kw of site.scrape_keywords || []) push(kw)
+
+    // 2. AI-generated category names
+    for (const cn of site.config?.default_category_names || []) push(cn)
+
+    // 3. Loaded categories
+    for (const cat of categoriesQuery.data || []) push(cat.name)
+
+    // 4. Tagline words (skip short stop-words)
+    if (site.config?.tagline) {
+      for (const word of site.config.tagline.split(/\s+/)) {
+        if (word.length > 4) push(word)
+      }
+    }
+
+    // 5. Generic fallbacks for variety
+    for (const k of DEFAULT_KEYWORDS) push(k)
+
+    return keywords
+  }, [siteQuery.data, categoriesQuery.data])
+
+  // Pre-curated Unsplash images stored in site.config.default_images (may be null/empty).
+  // When present, ArticleCard uses these instead of keyword-based Unsplash redirects.
+  const siteDefaultImages = useMemo(() => {
+    const imgs = siteQuery.data?.config?.default_images
+    return Array.isArray(imgs) && imgs.length > 0 ? imgs : null
+  }, [siteQuery.data])
 
   const value = {
     siteId: SITE_ID,
@@ -71,6 +120,7 @@ export function SiteProvider({ children }) {
     categoryMap,
     theme,
     siteKeywords,
+    siteDefaultImages,
     isLoading: siteQuery.isLoading || articlesQuery.isLoading || categoriesQuery.isLoading,
     isError: siteQuery.isError,
     error: siteQuery.error,

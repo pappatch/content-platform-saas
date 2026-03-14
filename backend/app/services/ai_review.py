@@ -295,13 +295,28 @@ async def ai_review_and_enrich(article_id: int) -> None:
                 article_id, reason, flags,
             )
 
-        # Enrich with an Unsplash image if no image was scraped
-        if not article.main_image_url:
-            from app.services.image_service import enrich_article_images
-            keywords = article.seo_keywords or article.title or ""
-            image_url = await enrich_article_images(article_id, keywords)
-            if image_url:
-                article.main_image_url = image_url
+        # Validate existing image or fetch one; never leave published articles imageless.
+        # validate_and_fix_article_image:
+        #   1. returns current URL if already valid
+        #   2. retries with different keywords on failure
+        #   3. falls back to site.config.default_images if all Unsplash calls fail
+        from app.services.image_validator import validate_and_fix_article_image
+
+        site_defaults: list[str] | None = None
+        if site and isinstance(getattr(site, "config", None), dict):
+            imgs = site.config.get("default_images")
+            if isinstance(imgs, list) and imgs:
+                site_defaults = imgs
+
+        image_keywords = article.seo_keywords or article.title or ""
+        image_url = await validate_and_fix_article_image(
+            article_id,
+            article.main_image_url,
+            image_keywords,
+            site_defaults,
+        )
+        if image_url:
+            article.main_image_url = image_url
 
         db.commit()
 

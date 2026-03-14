@@ -1,7 +1,10 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate } from './ArticleCard'
 import { useSite } from '../contexts/SiteContext'
 import { getDefaultImage } from '../utils/defaultImages'
+import RelatedArticles from './RelatedArticles'
+import Footer from './Footer'
 
 export default function ArticleDetail({ article, category, site, theme }) {
   const { siteKeywords } = useSite()
@@ -9,6 +12,69 @@ export default function ArticleDetail({ article, category, site, theme }) {
   const dir = site?.text_direction || 'ltr'
   const heroSrc = article.main_image_url || getDefaultImage(siteKeywords, article.id)
   const fallbackSrc = getDefaultImage(siteKeywords, article.id)
+  const readingTime = article.reading_time_minutes || 1
+
+  // --- SEO: Open Graph + JSON-LD ---
+  useEffect(() => {
+    const prev = document.title
+    document.title = title + (site ? ` | ${site.name}` : '')
+
+    function upsertMeta(property, content, useProperty = true) {
+      const attr = useProperty ? 'property' : 'name'
+      let el = document.querySelector(`meta[${attr}="${property}"]`)
+      if (!el) {
+        el = document.createElement('meta')
+        el.setAttribute(attr, property)
+        document.head.appendChild(el)
+      }
+      el.setAttribute('content', content || '')
+    }
+
+    const desc = article.seo_description || ''
+    const img = article.main_image_url || fallbackSrc
+    const url = window.location.href
+
+    upsertMeta('og:type', 'article')
+    upsertMeta('og:title', title)
+    upsertMeta('og:description', desc)
+    upsertMeta('og:image', img)
+    upsertMeta('og:url', url)
+    if (site?.name) upsertMeta('og:site_name', site.name)
+
+    upsertMeta('twitter:card', 'summary_large_image', false)
+    upsertMeta('twitter:title', title, false)
+    upsertMeta('twitter:description', desc, false)
+    upsertMeta('twitter:image', img, false)
+
+    // JSON-LD Article schema
+    const jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'Article',
+      headline: title,
+      description: desc,
+      image: img,
+      url,
+      datePublished: article.created_at,
+      dateModified: article.updated_at || article.created_at,
+      author: { '@type': 'Organization', name: site?.name || 'ContentPlatform' },
+      publisher: {
+        '@type': 'Organization',
+        name: site?.name || 'ContentPlatform',
+        logo: { '@type': 'ImageObject', url: img },
+      },
+    }
+    const script = document.createElement('script')
+    script.type = 'application/ld+json'
+    script.id = 'article-jsonld'
+    script.textContent = JSON.stringify(jsonLd)
+    document.getElementById('article-jsonld')?.remove()
+    document.head.appendChild(script)
+
+    return () => {
+      document.title = prev
+      document.getElementById('article-jsonld')?.remove()
+    }
+  }, [article, site, title, fallbackSrc])
 
   return (
     <article
@@ -59,9 +125,10 @@ export default function ArticleDetail({ article, category, site, theme }) {
           </p>
         )}
 
-        {/* Meta */}
-        <div className="mt-4 flex items-center gap-4 text-sm" style={{ color: 'var(--color-muted)' }}>
+        {/* Meta row */}
+        <div className="mt-4 flex items-center gap-4 text-sm flex-wrap" style={{ color: 'var(--color-muted)' }}>
           <time>{formatDate(article.created_at)}</time>
+          <span>· {readingTime} min read</span>
           {article.source_url && (
             <a
               href={article.source_url}
@@ -106,7 +173,7 @@ export default function ArticleDetail({ article, category, site, theme }) {
           }
         </div>
 
-        {/* Footer */}
+        {/* Footer nav */}
         <div className="mt-12 pt-6" style={{ borderTop: '1px solid var(--color-border)' }}>
           <Link
             to="/"
@@ -117,6 +184,12 @@ export default function ArticleDetail({ article, category, site, theme }) {
           </Link>
         </div>
       </div>
+
+      {/* Related articles — reads from SiteContext, no extra API calls */}
+      <RelatedArticles article={article} />
+
+      {/* Site footer */}
+      <Footer />
     </article>
   )
 }

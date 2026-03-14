@@ -49,3 +49,8 @@ class SiteResponse(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class SitePublicResponse(SiteResponse):
+    """Extended site response for public/renderer consumers — includes scrape keywords."""
+    scrape_keywords: list[str] = []

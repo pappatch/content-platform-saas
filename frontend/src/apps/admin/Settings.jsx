@@ -79,6 +79,15 @@ const GROUPS = [
 ]
 
 // ---------------------------------------------------------------------------
+// Select-option overrides — keys mapped to their allowed values
+// ---------------------------------------------------------------------------
+
+/** Settings that should render as a <select> instead of a free-text input. */
+const SELECT_OPTIONS = {
+  admin_theme_default: ['light', 'dark'],
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -112,12 +121,13 @@ function SettingRow({ setting }) {
   const [localValue, setLocalValue] = useState(setting.value)
   const [feedback, setFeedback] = useState(null)  // null | 'saved' | 'error:<msg>'
 
-  const isBool   = setting.value_type === 'bool'
-  const isFloat  = setting.value_type === 'float'
-  const isInt    = setting.value_type === 'int'
-  const isString = setting.value_type === 'string'
-  const step     = isFloat ? '0.01' : '1'
-  const min      = (isFloat || isInt) ? '0' : undefined
+  const isBool      = setting.value_type === 'bool'
+  const isFloat     = setting.value_type === 'float'
+  const isInt       = setting.value_type === 'int'
+  const isString    = setting.value_type === 'string'
+  const selectOpts  = SELECT_OPTIONS[setting.key] || null   // string[] | null
+  const step        = isFloat ? '0.01' : '1'
+  const min         = (isFloat || isInt) ? '0' : undefined
 
   const dirty = localValue !== setting.value
 
@@ -174,8 +184,19 @@ function SettingRow({ setting }) {
               {localValue === 'true' ? 'On' : 'Off'}
             </span>
           </label>
+        ) : selectOpts ? (
+          /* Select box for enum-like string settings */
+          <select
+            value={localValue}
+            onChange={(e) => { setLocalValue(e.target.value); setFeedback(null) }}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
+          >
+            {selectOpts.map((opt) => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
         ) : isString ? (
-          /* Text input for string type */
+          /* Text input for free-form string type */
           <input
             type="text"
             value={localValue}
@@ -196,10 +217,10 @@ function SettingRow({ setting }) {
 
         <button
           onClick={() => mut.mutate()}
-          disabled={mut.isPending || (!dirty && !isBool)}
-          title={!dirty && !isBool ? 'No changes' : 'Save'}
+          disabled={mut.isPending || (!dirty && !isBool && !selectOpts)}
+          title={!dirty && !isBool && !selectOpts ? 'No changes' : 'Save'}
           className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-            dirty || isBool
+            dirty || isBool || selectOpts
               ? 'bg-indigo-600 text-white hover:bg-indigo-700'
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           } disabled:opacity-60`}

@@ -12,6 +12,7 @@ Articles are never hard-deleted; status=removed is the audit-safe equivalent.
 """
 
 import enum
+import re
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Text, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -53,6 +54,9 @@ class Article(Base):
     # Editorial
     is_pinned = Column(Boolean, default=False)
     pin_order = Column(Integer, nullable=True)
+    # pinned_until: if set and > now(), article sorts to the top of the feed
+    # and shows a live countdown badge on TemplateB.
+    pinned_until = Column(DateTime, nullable=True)
 
     site_id = Column(Integer, ForeignKey("sites.id"), nullable=False)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
@@ -66,3 +70,24 @@ class Article(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
+
+    # -----------------------------------------------------------------------
+    # Computed properties (exposed via Pydantic from_attributes)
+    # -----------------------------------------------------------------------
+
+    @property
+    def reading_time_minutes(self) -> int:
+        """
+        Estimate reading time from content_html at 200 words per minute.
+
+        Strips HTML tags, collapses whitespace, counts words.
+        Returns a minimum of 1 minute.  Used by ArticleListResponse and
+        ArticleDetailResponse so the site-renderer can display 'X min read'
+        without the client having to parse the full HTML.
+        """
+        if not self.content_html:
+            return 1
+        text = re.sub(r'<[^>]+>', ' ', self.content_html)
+        text = re.sub(r'\s+', ' ', text).strip()
+        words = len(text.split()) if text else 0
+        return max(1, round(words / 200))
