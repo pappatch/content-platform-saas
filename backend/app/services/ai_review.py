@@ -25,6 +25,7 @@ Security invariants
 - content_html is sanitized before being written to DB.
 """
 
+import json
 import logging
 
 import anthropic
@@ -262,7 +263,6 @@ async def ai_review_and_enrich(article_id: int) -> None:
         if source_lang != site_lang:
             article.translated_from = source_lang
 
-        import json
         score = float(result.get("score", 0.0))
         score = max(0.0, min(1.0, score))
         flags: list[str] = [str(f) for f in result.get("flags", []) if f]

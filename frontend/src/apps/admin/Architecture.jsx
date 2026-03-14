@@ -339,7 +339,7 @@ function StatsBar() {
     { label: 'Published',  value: articleStats?.by_status?.published ?? '—',       color: isDark ? 'text-emerald-400' : 'text-emerald-600' },
     { label: 'Pending',    value: articleStats?.by_status?.pending ?? '—',         color: isDark ? 'text-amber-400' : 'text-amber-600' },
     { label: 'Templates',  value: 5,                                                color: isDark ? 'text-sky-400' : 'text-sky-600' },
-    { label: 'Workers',    value: 3,                                                color: isDark ? 'text-purple-400' : 'text-purple-600' },
+    { label: 'Workers',    value: 4,                                                color: isDark ? 'text-purple-400' : 'text-purple-600' },
     { label: 'Settings',   value: 9,                                                color: isDark ? 'text-gray-400' : 'text-gray-500' },
   ]
 
@@ -614,6 +614,7 @@ function ArchTab() {
             { icon: '🔎', title: 'Google CSE',        sub: 'secondary keyword search' },
             { icon: '🤖', title: 'Anthropic',         sub: 'Claude Haiku — AI review + config' },
             { icon: '📷', title: 'Unsplash',          sub: 'image enrichment (UNSPLASH_ACCESS_KEY)' },
+            { icon: '🎨', title: 'Stability AI',      sub: 'SDXL logo generation (STABILITY_API_KEY)' },
             { icon: '📡', title: 'Google Trends RSS', sub: 'trending keywords by region' },
           ].map(n => <Node key={n.title} color="amber" {...n} />)}
         </div>
@@ -642,6 +643,7 @@ function ArchTab() {
                 '/settings (CRUD — admin)',
                 '/public/* (unauthenticated)',
                 '/admin/users',
+                '/admin/images/audit',
                 '/analytics (track · read)',
               ].map(r => <div key={r} className={routeStyle}>{r}</div>)}
             </div>
@@ -653,10 +655,12 @@ function ArchTab() {
               <div className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${isDark ? 'text-indigo-400' : 'text-indigo-400'}`}>Services</div>
               <div className="space-y-1">
                 {[
-                  ['scraper.py',        'Tavily + CSE → HTML fetch → Article'],
-                  ['ai_review.py',      'Claude Haiku tool_use → rewrite + score'],
-                  ['image_service.py',  'Unsplash image enrichment'],
-                  ['trends_service.py', 'RSS fetch · pytrends explore · AI config'],
+                  ['scraper.py',         'Tavily + CSE → HTML fetch → Article'],
+                  ['ai_review.py',       'Claude Haiku tool_use → rewrite + score'],
+                  ['image_service.py',   'Unsplash · per_page=10 · excluded_urls dedup'],
+                  ['image_validator.py', 'HEAD-check · noise RE · trusted-CDN fast-path'],
+                  ['logo_service.py',    'Stability AI SDXL 1536×640 · SVG fallback'],
+                  ['trends_service.py',  'RSS fetch · pytrends explore · AI config'],
                   ['settings_service.py','in-memory cache · typed key-value'],
                 ].map(([name, desc]) => (
                   <div key={name} className={svcStyle}>
@@ -673,6 +677,7 @@ function ArchTab() {
                   ['scrape_worker',  'every 60s — runs due ScrapeJobs'],
                   ['review_worker',  'every 30s — AI reviews pending articles'],
                   ['trends_worker',  'interval from PlatformSettings'],
+                  ['image_worker',   'startup + every 6h — validates & fixes images'],
                 ].map(([name, desc]) => (
                   <div key={name} className={svcStyle}>
                     <div className={svcName}>{name}</div>
@@ -822,10 +827,13 @@ function ArchTab() {
                   'Per-site brand colors',
                   'VITE_SITE_ID env var',
                   'SiteContext (articles + cats)',
+
                   'Default image fallbacks',
                   '/public/* API (no auth)',
                   'getDefaultImage() utility',
                   'Pinned articles first',
+                  'Sticky headers A/D/E',
+                  'Hero ≥60vh (B — no clip)',
                 ].map(f => (
                   <div key={f} className={`${greenItem} leading-snug`}>{f}</div>
                 ))}

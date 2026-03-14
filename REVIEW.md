@@ -324,3 +324,79 @@ The main gaps are:
 4. DOMPurify is absent on the client side
 
 The codebase is **ready for continued development** and **not ready for public production** without addressing R1 (rate limiting) and R2 (DOMPurify) at minimum.
+
+---
+
+## Session 2 Security Audit — 2026-03-14
+
+**Auditor:** Claude Code (claude-sonnet-4-6)
+**Scope:** All new routes and services added since Session 1: trends, settings, logos, images, site enrichment, image worker, image validator, logo service
+
+### New Routes Audited
+
+| Route | Auth | Verdict |
+|-------|------|---------|
+| `GET/POST /trends/*` | `require_admin` | ✅ Safe |
+| `GET/PATCH /settings/{key}` | `require_admin` | ✅ Safe |
+| `POST /sites/ai-preview` | `require_admin` | ✅ Safe |
+| `POST /sites/{id}/ai-enrich` | `require_admin` | ✅ Safe |
+| `GET /sites/{id}/default-images` | `require_admin` | ✅ Safe |
+| `POST /sites/{id}/regenerate-logo` | `require_admin` | ✅ Safe |
+| `POST /admin/images/audit` | `require_admin` | ✅ Safe |
+| `PATCH /scraper/jobs/{id}` | `require_admin` | ✅ Safe |
+
+All new routes added since Session 1 have correct `require_admin` protection. No auth gaps found.
+
+### New Services Audited
+
+**`logo_service.py`**
+- API key (`STABILITY_API_KEY`) read from `Settings` only, never hardcoded — ✅
+- API key never logged (checked `logger.info` calls: only logs site name and base64 length) — ✅
+- SVG fallback uses `_xml_escape()` on site name / initials before injecting into SVG markup — ✅ XSS-safe
+- `_safe_color()` validates hex colors with `^#[0-9a-fA-F]{6}$` before putting them in SVG attributes — ✅
+
+**`image_service.py` (updated)**
+- New `excluded_urls` parameter does not log any URL contents at INFO level — ✅
+- Photo key normalisation (`_unsplash_photo_key`) uses regex only, no eval — ✅
+- `per_page` capped at `_CANDIDATES_PER_PAGE=10`; no user-controlled `per_page` — ✅
+
+**`image_validator.py`**
+- HEAD requests use `follow_redirects=True` with `max_redirects=5` — prevents redirect loops — ✅
+- Only checks URLs already stored by the backend scraper — no user-supplied proxy targets — ✅
+- Trusted-CDN fast-path (`images.unsplash.com`, `source.unsplash.com`) avoids HEAD requests on generated URLs — ✅
+
+**`trends_service.py`**
+- `create_site_from_trend()` enforces `TRENDS_AUTO_SITE_LIMIT` via `settings_service.get()` — configurable but still enforced — ✅
+- Trend keyword passed to Claude as a user message, not injected into system prompt or code — ✅
+
+**`settings_service.py`**
+- `set_value()` validates `value_type` before casting — prevents type confusion attacks — ✅
+- `PATCH /settings/{key}` allows only keys already in `platform_settings` table (404 if unknown key) — ✅
+- No eval or exec used for type casting — uses explicit `float()`, `int()`, `bool()` casts — ✅
+
+### Code Quality Fixes Applied This Session
+
+| Issue | File | Fix |
+|-------|------|-----|
+| `import json` inside function body | `ai_review.py` | Moved to module level |
+
+### New Recommendations
+
+**R11 — Unsplash Source API Deprecation (carried forward)**
+The `source.unsplash.com/featured/?{keyword}` pattern in `defaultImages.js` tier-2 fallback uses Unsplash's deprecated Source API. This still works but may stop without notice. Tier-1 (stored images) and Tier-3 (hardcoded fallbacks) would absorb the failure, but tier-2 would silently serve dead images. Migration path: replace with a small set of pre-searched and stored fallback URLs.
+
+**R12 — Stability AI Timeout Risk**
+`logo_service.py` has `_REQUEST_TIMEOUT = 60.0`. The logo generation call blocks the `POST /sites` request for up to 60 seconds if Stability AI is slow. This is currently handled via `asyncio.create_task()` for background site creation, but synchronous `POST /sites/{id}/regenerate-logo` will block. Consider adding a timeout on the client side or running logo generation as a background task for all callers.
+
+**R13 — Unsplash `excluded_urls` Memory Growth**
+The `excluded_urls` set passed to `enrich_article_images` is built by querying all site articles' `main_image_url` values in one pass. At scale (thousands of articles per site), this is a large in-memory set. For now (19 articles) this is fine. At 10,000+ articles, consider limiting to the most recent N articles or querying only photo IDs.
+
+### Updated Overall Assessment
+
+**Rating: GOOD with well-understood gaps**
+
+All new routes and services added since Session 1 are correctly protected and follow the established security patterns. The codebase has grown substantially while maintaining consistent auth, error handling, and API key hygiene. The three outstanding production blockers remain:
+
+1. **R1** — Rate limiting on `/analytics/track`, `/auth/login`, `/auth/register`
+2. **R2** — DOMPurify client-side sanitization
+3. **R3** — CORS `allow_origins` must be updated from localhost before production deployment

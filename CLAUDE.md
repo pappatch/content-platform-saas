@@ -237,7 +237,11 @@ JWT issued at `/auth/login`. Claim `sub` = user ID (string), `role` = role value
 
 ### Image Service
 
-`services/image_service.py`: calls Unsplash Search API to find a relevant image for new articles. Requires `UNSPLASH_ACCESS_KEY`. Returns `regular` URL or `None` if key missing / API error.
+`services/image_service.py`: calls Unsplash Search API (`per_page=10`) to find a relevant image for new articles. Requires `UNSPLASH_ACCESS_KEY`. Accepts `excluded_urls: set[str]` to prevent assigning the same Unsplash photo to multiple articles on the same site. Normalises all CDN URLs to their stable `photo-<id>` slug before comparing (Unsplash varies `ixid`/`ixlib` params). Tries up to `_MAX_CANDIDATE_PAGES=3` pages before accepting a last-resort URL.
+
+### Logo Service
+
+`services/logo_service.py`: calls Stability AI SDXL (`stable-diffusion-xl-1024-v1-0`) at 1536×640 (closest valid SDXL pair to target 4:1 ratio). Returns `data:image/png;base64,...` URI stored in `site.config.logo_url`. Falls back to an offline SVG generator (initials + accent icon) when `STABILITY_API_KEY` is absent or API fails. Called by `POST /sites`, `POST /sites/{id}/regenerate-logo`, and `trends_service.create_site_from_trend()`.
 
 ---
 
@@ -383,28 +387,38 @@ GET        /analytics
 - Auto article categorization: keyword-matching assigns each published article with `category_id=null` to the best-matching site category (score = matching words in title+seo_keywords); 89 of 91 uncategorized articles assigned; `ai_review.py` now enforces category assignment for all future reviewed articles
 - Scrape job editing: `PATCH /scraper/jobs/{id}` endpoint (keywords, language, frequency_minutes, category_rules); `ScrapeJobUpdate` schema with same validators as Create; `ScrapeJobModal` extended to edit mode (seeds from existing job, site field locked, submit calls `updateJob`); "Edit" button per row in `ScrapeJobs.jsx`
 - Tattoo site (id=4 "Geometric small tattoo") keywords updated — all 8 keywords now include the word "tattoo" (e.g. "Minimalist Geometric tattoo")
+- **Logo standards v2**: `logo_service.py` prompt updated to BBC/TechCrunch-style ("Professional content website logo, horizontal format, minimalist brand icon..."); dimensions changed from 1344×768 → 1536×640 (SDXL constraint — 800×200 target not a valid pair; 1536×640 is closest wide landscape); display CSS `max-width:200px; height:50px; object-fit:contain` in `SiteBrand.jsx` and admin `Sites.jsx`; White Noise Hub brand colors fixed `#f5f5f5` → `#1a1a2e` / `#4a90a4` → `#e94560`; all 5 site logos regenerated
+- **Hero/header fix**: TemplateB `HeroSection` height `h-40 md:h-56` → `min-h-[60vh] md:min-h-[75vh]` (160px was clipping the `text-4xl`/`text-6xl` h1 headline due to `overflow-hidden + flex items-end`); Templates A/D/E headers made `sticky top-0 z-40` for consistent nav behaviour; TemplateC left as-is (tall centered blog header)
+- **Image dedup** (`image_service.py`): `_fetch_unsplash_candidates()` fetches `per_page=10` and returns `list[str]`; `_unsplash_photo_key()` normalises CDN URLs to stable `photo-<hex>-<hex>` slug (Unsplash varies `ixid`/`ixlib` params across calls); `enrich_article_images()` accepts `excluded_urls: set[str]`; skips any candidate whose photo key is already in use on the same site; tries up to 3 pages before accepting last-resort URL; `validate_and_fix_article_image()` accepts and threads `excluded_urls`; `ai_review.py` collects existing site image URLs before each new article and passes as `excluded_urls` → every new article gets a unique photo
+- **Bulk dedup fix** (site 1): all 19 published Shih Tzu articles now have 19 unique Unsplash photos (previously 3 photos shared across 19 articles); fix used article-specific English queries derived from Hebrew titles + seo_keywords
+- **Code quality**: `import json` moved to module level in `ai_review.py` (was inside `ai_review_and_enrich()`)
+- **End-of-session audit** (2026-03-14): full security + code review; Architecture.jsx updated with Stability AI, logo_service, image_validator, image_worker (Workers stat 3→4), /admin/images/audit route, sticky header + hero height notes in site renderer; REVIEW.md appended with new session findings
 
 ### 🔲 Next Steps (priority order)
 
 1. **Bulk actions in CMS** — checkboxes partially exist in `Articles.jsx` but need backend: `PATCH /cms/articles/bulk` accepting array of IDs + action (publish/remove/reassign-category).
 
-2. **Pin order drag-and-drop** — `is_pinned` / `pin_order` fields exist on Article; `pinned_until` timed pinning done; still need drag-and-drop ordering UI for editorial `is_pinned` / `pin_order`.
+2. **Logo upgrade: DALL-E 3 / Recraft** — Stability AI SDXL doesn't support 800×200 (4:1); the closest valid pair is 1536×640. DALL-E 3 (`dall-e-3`) accepts arbitrary sizes and returns PNG with transparency natively. Recraft v3 is another option with vector output. Both would produce proper banner-ratio logos. Swap `logo_service.py` AI call if `OPENAI_API_KEY` is available.
 
-3. **InfiniteFeed for other templates** — TemplateB uses InfiniteFeed; Templates A/C/D/E still render all articles at once. Consider applying InfiniteFeed to their article lists too.
+3. **Pin order drag-and-drop** — `is_pinned` / `pin_order` fields exist on Article; `pinned_until` timed pinning done; still need drag-and-drop ordering UI for editorial `is_pinned` / `pin_order`.
 
-3. **Analytics enhancement** — per-article page views, per-site traffic trends, unique visitor estimation. `POST /analytics/track` is already called by the renderer; data is collected but not fully surfaced.
+4. **InfiniteFeed for other templates** — TemplateB uses InfiniteFeed; Templates A/C/D/E still render all articles at once. Consider applying InfiniteFeed to their article lists too.
 
-4. **Tests** — pytest infrastructure set up, auth tests exist. Need: scraper tests, AI review tests (mocked Anthropic client), public API integration tests.
+5. **Analytics enhancement** — per-article page views, per-site traffic trends, unique visitor estimation. `POST /analytics/track` is already called by the renderer; data is collected but not fully surfaced.
 
-6. **Postgres migration** — SQLite for dev; switch `DATABASE_URL` to RDS Postgres for production. No code changes needed — Alembic handles the schema.
+6. **Social media trends** — currently fetches from Google Trends RSS only. Add Twitter/X trending topics (via unofficial scrape or RapidAPI), Reddit hot posts, or TikTok trending sounds as additional trend sources.
 
-7. **Rate limiting** — `POST /analytics/track` is unauthenticated and has no rate limiting; add slowapi or nginx rate limit before production. `POST /auth/login` and `POST /auth/register` similarly unprotected.
+7. **Tests** — pytest infrastructure set up, auth tests exist. Need: scraper tests, AI review tests (mocked Anthropic client), image service tests (mocked Unsplash), public API integration tests.
 
-8. **DOMPurify on client** — `content_html` is sanitized server-side but rendered with `dangerouslySetInnerHTML` in both `site-renderer` and the review preview modal. Add DOMPurify as a defence-in-depth layer.
+8. **Postgres migration** — SQLite for dev; switch `DATABASE_URL` to RDS Postgres for production. No code changes needed — Alembic handles the schema. Also add DB indexes (see REVIEW.md R4).
 
-9. **VITE_API_URL** — frontend `api/client.js` now reads `import.meta.env.VITE_API_URL` (falls back to `localhost:8000`). Set this in `frontend/.env.production` before any deployment.
+9. **AWS deployment** — target EC2/ECS + RDS Postgres + S3 + CloudFront. See `/deploy` slash command for checklist.
 
-10. **Missing DB indexes** — see REVIEW.md for recommended indexes on `articles.status`, `articles.site_id`, and `analytics.created_at`.
+10. **Rate limiting** — `POST /analytics/track` is unauthenticated and has no rate limiting; add slowapi or nginx rate limit before production. `POST /auth/login` and `POST /auth/register` similarly unprotected. (REVIEW.md R1)
+
+11. **DOMPurify on client** — `content_html` is sanitized server-side but rendered with `dangerouslySetInnerHTML` in both `site-renderer` and the review preview modal. Add DOMPurify as a defence-in-depth layer. (REVIEW.md R2)
+
+12. **VITE_API_URL** — frontend `api/client.js` now reads `import.meta.env.VITE_API_URL` (falls back to `localhost:8000`). Set this in `frontend/.env.production` before any deployment.
 
 ---
 
@@ -458,3 +472,41 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | Trends dedup | `(keyword, trend_date)` unique pair | Same keyword on a new day is a new row; UI shows "Seen before" badge |
 | Auto-site limit | `TRENDS_AUTO_SITE_LIMIT=3` in config | Prevents uncontrolled site sprawl; enforced server-side in service layer |
 | Trend regions | US, GB, IL, FR, SA → en/en/he/fr/ar | Covers all 4 supported site languages |
+| Image dedup | `excluded_urls` set + photo-ID normalisation | Unsplash returns same photo with different ixid/ixlib params; photo slug is the only stable ID |
+| Logo dimensions | 1536×640 (SDXL-valid) not 800×200 (target) | Stability AI SDXL requires approved dimension pairs; 1536×640 is the closest valid wide-landscape ratio |
+
+---
+
+## Last Session Summary
+
+**Date:** 2026-03-14
+
+### What was built this session
+
+| Feature | Files changed | Status |
+|---------|--------------|--------|
+| Logo standards v2 | `logo_service.py`, `SiteBrand.jsx`, `Sites.jsx` | ✅ Done |
+| White Noise Hub color fix | DB direct update | ✅ Done |
+| Hero height fix (TemplateB) | `TemplateB.jsx` | ✅ Done — `min-h-[60vh] md:min-h-[75vh]` |
+| Sticky headers A/D/E | `TemplateA/D/E.jsx` | ✅ Done |
+| Image dedup (service layer) | `image_service.py`, `image_validator.py`, `ai_review.py` | ✅ Done |
+| Bulk dedup fix (site 1) | DB direct update via script | ✅ Done — 19 unique photos |
+| Code quality: `import json` at module level | `ai_review.py` | ✅ Done |
+| Architecture.jsx v3 | `Architecture.jsx` | ✅ Done |
+| End-of-session audit | `REVIEW.md`, `CLAUDE.md` | ✅ Done |
+
+### Current known issues / state
+
+- **Site 1 (Shih Tzu):** All 19 published articles now have unique images. Article 13 ("סרגל נגישות אתר" — accessibility bar) is off-topic content that slipped through with a high score; may want to manually review/remove.
+- **Logo quality:** SDXL logos at 1536×640 are reasonable but not pixel-perfect banners. Upgrading to DALL-E 3 (supports arbitrary sizes, true 4:1) would give better results when `OPENAI_API_KEY` is available.
+- **No rate limiting** on `/analytics/track`, `/auth/login`, `/auth/register` — acceptable for dev, required before production.
+- **No DOMPurify** on client-side `dangerouslySetInnerHTML` — acceptable for dev, required before production.
+- **5 sites** in DB: Shih Tzu (id=1, Hebrew RTL), Bonsai (id=2, English), White Noise Hub (id=3, English), Geometric small tattoo (id=4, English), Giulia Vecchio Central (id=5, English).
+
+### Exact next steps to continue from
+
+1. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
+2. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
+3. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
+4. Run `alembic revision --autogenerate -m "add db indexes"` and add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
+5. Before production: add slowapi rate limiting, DOMPurify, set `VITE_API_URL` in `frontend/.env.production`, update CORS origins in `main.py`
