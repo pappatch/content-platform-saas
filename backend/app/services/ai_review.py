@@ -1,39 +1,41 @@
 """
-AI Review service — quality scoring, flag generation, SEO enrichment, and translation.
+AI Review service — full content rewrite, translation, quality scoring, and SEO enrichment.
 
 Architecture
 ------------
-A single Anthropic API call uses tool use with tool_choice="tool" to force a
-structured JSON response containing score, flags, and all SEO fields. This
-guarantees parseable output and avoids a second API round-trip.
+A single Anthropic API call uses tool_use with tool_choice="tool" to force a structured JSON
+response that rewrites the article as clean HTML in the site language, scores quality, and
+produces SEO metadata — all in one round-trip.
 
-Translation
------------
-After scraping, if the article language differs from the site language, a second
-Anthropic call translates title and body to the site language. The original
-language code is stored in translated_from for provenance tracking.
+Rewrite flow
+------------
+1. Load article and its content_html from the DB; load the parent site.
+2. Detect source language; compare to site language.
+3. Truncate content_html to INPUT_CHAR_LIMIT and build prompt.
+4. Call Anthropic with rewrite_article tool forced; AI returns content_html (HTML string).
+5. Sanitize and store content_html; update article metadata.
+6. Publish the article; set ai_score, ai_flags, and SEO fields.
 
 Security invariants
 -------------------
-- API key read exclusively from Settings (environment variable); never hardcoded
-- Article body truncated to BODY_CHAR_LIMIT before being sent to the API
-- All anthropic.APIError subclasses are caught, logged, and translated to a
-  generic internal message; raw API errors never reach callers
-- On any failure the article stays status=pending (no data loss)
+- API key read exclusively from Settings (environment variable); never hardcoded.
+- Text sent to the API is truncated to INPUT_CHAR_LIMIT chars total.
+- All anthropic.APIError subclasses are caught, logged; raw errors never reach callers.
+- On any failure the article stays status=pending (no data loss).
+- content_html is sanitized before being written to DB.
 """
 
-import json
 import logging
-from datetime import datetime, timezone
 
 import anthropic
 
 from app.config import get_settings
 from app.database import SessionLocal
 from app.models.article import Article, ArticleStatus
-from app.models.category import Category
-from app.models.site import Site
+from app.models.site import Site, SiteLanguage
 from app.services.scraper import detect_language
+from app.services import settings_service
+from app.utils.sanitize import sanitize_html, sanitize_text
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -43,8 +45,8 @@ settings = get_settings()
 # ---------------------------------------------------------------------------
 
 MODEL = "claude-haiku-4-5-20251001"
-BODY_CHAR_LIMIT = 2000
-MAX_TOKENS = 1024
+INPUT_CHAR_LIMIT = 4000   # max chars sent to API per article
+MAX_TOKENS = 2048          # enough for a rewritten article + metadata
 
 LANGUAGE_NAMES = {
     "en": "English",
@@ -53,102 +55,122 @@ LANGUAGE_NAMES = {
     "fr": "French",
 }
 
+_RTL_LANGUAGES = {SiteLanguage.he, SiteLanguage.ar}
+
 # ---------------------------------------------------------------------------
-# Tool definitions
+# Tool definition — combined rewrite + score + SEO tool
 # ---------------------------------------------------------------------------
 
-_REVIEW_TOOL = {
-    "name": "review_and_enrich",
+_REWRITE_TOOL = {
+    "name": "rewrite_article",
     "description": (
-        "Review an article for quality and relevance, then produce SEO metadata. "
-        "Always call this tool — do not respond with plain text."
+        "Rewrite and translate the article content into the target language, then score it "
+        "and produce SEO metadata. Always call this tool — never respond with plain text."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
+            "title": {
+                "type": "string",
+                "description": "Rewritten article title in the target language, max 200 characters.",
+            },
+            "content_html": {
+                "type": "string",
+                "description": (
+                    "Complete article body as clean semantic HTML in the target language. "
+                    "Use <h2> for main section headings, <h3> for sub-sections, "
+                    "<p> for paragraphs, <blockquote> for quotes, "
+                    "<img src='...' alt='...'> for images (preserve original image URLs exactly). "
+                    "No classes, no inline styles, no <html>/<head>/<body> wrapper tags."
+                ),
+            },
             "score": {
                 "type": "number",
                 "description": (
-                    "Overall quality score from 0.0 (worst) to 1.0 (best). "
-                    "Consider relevance, writing quality, spam signals, and factual tone."
+                    "Overall quality score 0.0–1.0. "
+                    "Consider coherence (is the rewritten article well-structured?), "
+                    "relevance (on-topic for the site categories?), and readability. "
+                    "Score 0.0–0.3 for: error pages, cookie notices, legal docs with no news value, spam. "
+                    "Score 0.7–1.0 for: informative, well-structured, on-topic news or editorial content."
                 ),
             },
             "flags": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "List of specific issues found (e.g. 'clickbait title', 'thin content', "
-                    "'off-topic', 'spam keywords'). Empty list if no issues."
+                    "Specific issues found (e.g. 'thin content', 'off-topic', 'spam keywords', "
+                    "'error page'). Empty array if none."
                 ),
             },
             "seo_title": {
                 "type": "string",
-                "description": "SEO-optimised title, max 60 characters.",
+                "description": "SEO-optimised title in the target language, max 60 characters.",
             },
             "seo_description": {
                 "type": "string",
-                "description": "Meta description summarising the article, max 160 characters.",
+                "description": "Meta description in the target language, max 160 characters.",
             },
             "seo_keywords": {
                 "type": "string",
-                "description": "5–10 comma-separated keywords relevant to the article.",
+                "description": "5–10 comma-separated keywords in the target language.",
             },
         },
-        "required": ["score", "flags", "seo_title", "seo_description", "seo_keywords"],
+        "required": ["title", "content_html", "score", "flags", "seo_title", "seo_description", "seo_keywords"],
     },
 }
 
-_TRANSLATE_TOOL = {
-    "name": "translate_article",
-    "description": "Translate the article title and body to the target language.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "title": {
-                "type": "string",
-                "description": "Translated title.",
-            },
-            "body": {
-                "type": "string",
-                "description": "Translated body text, preserving paragraph structure.",
-            },
-        },
-        "required": ["title", "body"],
-    },
-}
-
-
 # ---------------------------------------------------------------------------
-# Prompt builders
+# Prompt helpers
 # ---------------------------------------------------------------------------
 
-def _build_review_prompt(title: str, body: str, category_names: list[str]) -> str:
-    categories_str = ", ".join(category_names) if category_names else "general"
-    truncated_body = body[:BODY_CHAR_LIMIT]
-    ellipsis = "…" if len(body) > BODY_CHAR_LIMIT else ""
-    return (
-        f"Review the following article for a site covering: {categories_str}.\n\n"
-        f"Title: {title}\n\n"
-        f"Body:\n{truncated_body}{ellipsis}\n\n"
-        "Evaluate using these criteria:\n"
-        "1. Relevance — is the content on-topic for the site categories listed above?\n"
-        "2. Quality — is the writing coherent, informative, and well-structured?\n"
-        "3. Spam — is it free from clickbait, keyword stuffing, or low-effort filler?\n"
-        "4. Tone — is it factual and objective, not sensationalist or misleading?\n\n"
-        "Call review_and_enrich with your assessment."
-    )
+def _serialize_content_for_prompt(article_title: str, content_html: str) -> str:
+    """
+    Truncate article title + body to INPUT_CHAR_LIMIT characters for the prompt.
+    """
+    header = f"TITLE: {article_title}\n\nCONTENT:\n"
+    remaining = INPUT_CHAR_LIMIT - len(header)
+    if remaining <= 0:
+        return header
+    return header + (content_html or "")[:remaining]
 
 
-def _build_translate_prompt(title: str, body: str, target_lang: str) -> str:
+def _build_rewrite_prompt(
+    serialized: str,
+    target_lang: str,
+    source_lang: str,
+    category_names: list[str],
+    is_rtl: bool,
+) -> str:
     lang_name = LANGUAGE_NAMES.get(target_lang, target_lang)
-    truncated_body = body[:BODY_CHAR_LIMIT]
-    ellipsis = "…" if len(body) > BODY_CHAR_LIMIT else ""
+    categories_str = ", ".join(category_names) if category_names else "general"
+    translating = source_lang != target_lang
+    translate_note = (
+        f"The source content is in {LANGUAGE_NAMES.get(source_lang, source_lang)}. "
+        f"Translate it faithfully to {lang_name} while rewriting for fluency.\n"
+        if translating
+        else ""
+    )
+    rtl_note = (
+        f"The target language ({lang_name}) is written right-to-left. "
+        "Use appropriate RTL phrasing and punctuation conventions.\n"
+        if is_rtl
+        else ""
+    )
     return (
-        f"Translate the following article to {lang_name}. "
-        "Preserve the paragraph structure and maintain a natural, journalistic tone.\n\n"
-        f"Title: {title}\n\n"
-        f"Body:\n{truncated_body}{ellipsis}\n\n"
-        "Call translate_article with the translated title and body."
+        f"You are rewriting a scraped article for a {lang_name}-language news site "
+        f"covering: {categories_str}.\n\n"
+        f"{translate_note}"
+        f"{rtl_note}"
+        "Instructions:\n"
+        f"1. Rewrite the article in natural, fluent {lang_name}.\n"
+        "2. Preserve all facts, figures, and source information — do not invent content.\n"
+        "3. Structure the article: open with a strong heading (h2), use h3 subheadings "
+        "   to break up sections, write clear paragraphs.\n"
+        "4. Preserve all <img> tags — keep original src URLs exactly as-is.\n"
+        "5. Score the article quality and produce SEO metadata in the target language.\n\n"
+        "Source content:\n"
+        f"{serialized}\n\n"
+        "Call rewrite_article with the result."
     )
 
 
@@ -158,14 +180,17 @@ def _build_translate_prompt(title: str, body: str, target_lang: str) -> str:
 
 async def ai_review_and_enrich(article_id: int) -> None:
     """
-    Review and enrich a single article via the Anthropic API.
+    Rewrite, translate (if needed), score, and publish a single pending article.
 
     Steps:
-    1. Detect article language; if it differs from site language, translate first.
-    2. Score, flag, and generate SEO metadata.
-    3. Publish the article (with flags if score is below threshold).
+    1. Load article and its content_html; load the parent site.
+    2. Detect source language; compare to site language.
+    3. Truncate content_html to INPUT_CHAR_LIMIT and build prompt.
+    4. Call Anthropic with rewrite_article tool forced; AI returns content_html.
+    5. Sanitize and store content_html; update article metadata.
+    6. Set status = published; commit.
 
-    On any error: logs it and leaves status = pending (safe to retry).
+    On any error: logs and leaves status = pending (safe to retry).
     """
     if not settings.anthropic_api_key:
         logger.warning(
@@ -189,43 +214,35 @@ async def ai_review_and_enrich(article_id: int) -> None:
             )
             return
 
-        # --- Translation step ---
+        # Load site for language + category context
+        from app.models.category import Category
         site = db.query(Site).filter(Site.id == article.site_id).first()
-        site_lang = site.language.value if site else "en"
-        article_lang = detect_language(article.title + " " + article.body)
+        site_lang_enum = site.language if site else SiteLanguage.en
+        site_lang = site_lang_enum.value
+        is_rtl = site_lang_enum in _RTL_LANGUAGES
 
-        if article_lang != site_lang:
-            logger.info(
-                "Article %d language=%s differs from site language=%s — translating",
-                article_id, article_lang, site_lang,
-            )
-            try:
-                translated = await _translate(article.title, article.body, site_lang)
-                article.title = translated["title"]
-                article.body = translated["body"]
-                article.translated_from = article_lang
-                db.flush()
-                logger.info(
-                    "Article %d translated %s→%s", article_id, article_lang, site_lang
-                )
-            except Exception:
-                logger.warning(
-                    "ai_review_and_enrich: translation failed for article %d, proceeding without",
-                    article_id,
-                )
+        # Detect source language from title + plain-text snippet of content
+        text_sample = sanitize_text((article.content_html or "")[:2000])
+        sample = article.title + " " + text_sample
+        source_lang = detect_language(sample)
 
-        # --- Review step ---
+        # Gather site category names for context
         category_names = [
             row.name
-            for row in db.query(Category).filter(
-                Category.site_id == article.site_id
-            ).all()
+            for row in db.query(Category)
+            .filter(Category.site_id == article.site_id)
+            .all()
         ]
 
-        prompt = _build_review_prompt(article.title, article.body, category_names)
+        # Serialize content and build prompt
+        serialized = _serialize_content_for_prompt(article.title, article.content_html or "")
+        prompt = _build_rewrite_prompt(
+            serialized, site_lang, source_lang, category_names, is_rtl
+        )
 
+        # Call API
         try:
-            result = await _call_review_api(prompt)
+            result = await _call_rewrite_api(prompt)
         except Exception:
             logger.warning(
                 "ai_review_and_enrich: API call failed for article %d, leaving pending",
@@ -233,28 +250,60 @@ async def ai_review_and_enrich(article_id: int) -> None:
             )
             return
 
-        score = float(result["score"])
-        flags: list[str] = result.get("flags", [])
+        # --- Update article body ---
+        raw_html = result.get("content_html") or ""
+        article.content_html = sanitize_html(raw_html) or None
+
+        # --- Update article fields ---
+        new_title = sanitize_text(result.get("title") or "").strip()
+        if new_title:
+            article.title = new_title[:500]
+
+        if source_lang != site_lang:
+            article.translated_from = source_lang
+
+        import json
+        score = float(result.get("score", 0.0))
+        score = max(0.0, min(1.0, score))
+        flags: list[str] = [str(f) for f in result.get("flags", []) if f]
 
         article.ai_score = score
         article.ai_flags = json.dumps(flags) if flags else None
-        article.seo_title = result.get("seo_title") or None
-        article.seo_description = result.get("seo_description") or None
-        article.seo_keywords = result.get("seo_keywords") or None
-        article.status = ArticleStatus.published
+        article.seo_title = sanitize_text(result.get("seo_title") or "")[:200] or None
+        article.seo_description = sanitize_text(result.get("seo_description") or "")[:500] or None
+        article.seo_keywords = sanitize_text(result.get("seo_keywords") or "")[:500] or None
 
-        db.commit()
+        # Determine publish status from platform settings
+        threshold    = settings_service.get("ai_review_threshold", 0.5)
+        auto_publish = settings_service.get("auto_publish_enabled", True)
 
-        if score >= settings.ai_review_threshold:
+        if auto_publish and score >= threshold:
+            article.status = ArticleStatus.published
             logger.info(
-                "Article %d published — score=%.2f (above threshold %.2f)",
-                article_id, score, settings.ai_review_threshold,
+                "Article %d auto-published — score=%.2f ≥ threshold %.2f",
+                article_id, score, threshold,
             )
         else:
-            logger.info(
-                "Article %d published with flags — score=%.2f (below threshold %.2f), flags=%s",
-                article_id, score, settings.ai_review_threshold, flags,
+            article.status = ArticleStatus.pending
+            reason = (
+                f"score {score:.2f} < threshold {threshold:.2f}"
+                if auto_publish
+                else "auto_publish_enabled=false"
             )
+            logger.info(
+                "Article %d kept pending — %s, flags=%s",
+                article_id, reason, flags,
+            )
+
+        # Enrich with an Unsplash image if no image was scraped
+        if not article.main_image_url:
+            from app.services.image_service import enrich_article_images
+            keywords = article.seo_keywords or article.title or ""
+            image_url = await enrich_article_images(article_id, keywords)
+            if image_url:
+                article.main_image_url = image_url
+
+        db.commit()
 
     except Exception:
         logger.exception("ai_review_and_enrich: unexpected error for article %d", article_id)
@@ -263,19 +312,19 @@ async def ai_review_and_enrich(article_id: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# API call helpers
+# API call helper
 # ---------------------------------------------------------------------------
 
-async def _call_review_api(prompt: str) -> dict:
-    """Call the review tool and return its input dict."""
+async def _call_rewrite_api(prompt: str) -> dict:
+    """Call the rewrite_article tool and return its input dict."""
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     try:
         response = await client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
-            tools=[_REVIEW_TOOL],
-            tool_choice={"type": "tool", "name": "review_and_enrich"},
+            tools=[_REWRITE_TOOL],
+            tool_choice={"type": "tool", "name": "rewrite_article"},
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.AuthenticationError:
@@ -295,27 +344,7 @@ async def _call_review_api(prompt: str) -> dict:
         raise
 
     for block in response.content:
-        if block.type == "tool_use" and block.name == "review_and_enrich":
+        if block.type == "tool_use" and block.name == "rewrite_article":
             return block.input
 
-    raise ValueError("Anthropic response contained no review_and_enrich tool call")
-
-
-async def _translate(title: str, body: str, target_lang: str) -> dict:
-    """Translate title + body to target_lang. Returns {title, body}."""
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    prompt = _build_translate_prompt(title, body, target_lang)
-
-    response = await client.messages.create(
-        model=MODEL,
-        max_tokens=MAX_TOKENS * 3,  # translations can be longer than reviews
-        tools=[_TRANSLATE_TOOL],
-        tool_choice={"type": "tool", "name": "translate_article"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    for block in response.content:
-        if block.type == "tool_use" and block.name == "translate_article":
-            return block.input
-
-    raise ValueError("Anthropic response contained no translate_article tool call")
+    raise ValueError("Anthropic response contained no rewrite_article tool call")

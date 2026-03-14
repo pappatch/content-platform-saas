@@ -1,545 +1,483 @@
-import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import Quill from 'quill'
-import 'quill/dist/quill.snow.css'
-import { getArticle, updateArticle, removeArticle } from '../../services/articles'
-import { getCategories } from '../../services/categories'
+import { useEditor, EditorContent } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import Image from '@tiptap/extension-image'
+import { getArticle, updateArticle } from '../../services/articles'
 import { getSites } from '../../services/sites'
-import Spinner from '../../components/Spinner'
-import ConfirmDialog from '../../components/ConfirmDialog'
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Constants
 // ---------------------------------------------------------------------------
 
-function AiScoreBadge({ score }) {
-  if (score == null) return <span className="text-sm text-gray-400">No score</span>
-  const pct = Math.round(score * 100)
-  const cls = score >= 0.7
-    ? 'bg-green-100 text-green-700 border border-green-200'
-    : score >= 0.4
-    ? 'bg-yellow-100 text-yellow-700 border border-yellow-200'
-    : 'bg-red-100 text-red-700 border border-red-200'
+const STATUS_COLORS = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  published: 'bg-green-100 text-green-800',
+  removed: 'bg-red-100 text-red-800',
+}
+
+// ---------------------------------------------------------------------------
+// TipTap rich-text editor
+// ---------------------------------------------------------------------------
+
+function ToolbarButton({ onClick, active, title, children }) {
   return (
-    <span className={`inline-block rounded-lg px-3 py-1 text-sm font-semibold ${cls}`}>
-      AI Score: {pct}%
-    </span>
+    <button
+      type="button"
+      onMouseDown={(e) => { e.preventDefault(); onClick() }}
+      title={title}
+      className={`px-2 py-1 text-xs rounded border transition-colors ${
+        active
+          ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
+          : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
-function StatusBadge({ status }) {
-  const map = {
-    pending: 'bg-yellow-100 text-yellow-700',
-    published: 'bg-green-100 text-green-700',
-    removed: 'bg-red-100 text-red-700',
-  }
-  return (
-    <span className={`inline-block rounded-full px-3 py-1 text-sm font-medium capitalize ${map[status] ?? 'bg-gray-100 text-gray-600'}`}>
-      {status}
-    </span>
-  )
-}
-
-/** Convert plain text with \n\n to HTML paragraphs for Quill */
-function plaintextToHtml(text) {
-  if (!text) return ''
-  // If it already looks like HTML, pass through
-  if (text.trimStart().startsWith('<')) return text
-  return text
-    .split(/\n\n+/)
-    .map((para) => `<p>${para.replace(/\n/g, '<br>')}</p>`)
-    .join('')
-}
-
-// ---------------------------------------------------------------------------
-// Quill body editor
-// ---------------------------------------------------------------------------
-
-function QuillBodyEditor({ value, onSave, images = [] }) {
-  const [editing, setEditing] = useState(false)
+function TipTapEditor({ value, rtl, onSave }) {
   const [saving, setSaving] = useState(false)
-  const containerRef = useRef(null)
-  const quillRef = useRef(null)
+  const [imageUrl, setImageUrl] = useState('')
+  const [showImgInput, setShowImgInput] = useState(false)
 
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Image.configure({ inline: false, allowBase64: false }),
+    ],
+    content: value || '',
+  })
+
+  // Sync content when article changes (e.g. after AI review)
   useEffect(() => {
-    if (!editing || quillRef.current) return
-
-    quillRef.current = new Quill(containerRef.current, {
-      theme: 'snow',
-      modules: {
-        toolbar: [
-          ['bold', 'italic', 'underline'],
-          [{ header: [1, 2, 3, false] }],
-          [{ list: 'ordered' }, { list: 'bullet' }],
-          ['blockquote', 'link', 'image'],
-          ['clean'],
-        ],
-      },
-    })
-
-    quillRef.current.clipboard.dangerouslyPasteHTML(plaintextToHtml(value))
-  }, [editing]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Destroy Quill instance when leaving edit mode
-  useEffect(() => {
-    if (!editing && quillRef.current) {
-      quillRef.current = null
+    if (editor && value !== undefined) {
+      const current = editor.getHTML()
+      if (current !== value) {
+        editor.commands.setContent(value || '', false)
+      }
     }
-  }, [editing])
+  }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function insertImage(url) {
-    if (!quillRef.current) return
-    const range = quillRef.current.getSelection(true)
-    quillRef.current.insertEmbed(range.index, 'image', url)
-    quillRef.current.setSelection(range.index + 1)
-  }
-
-  async function handleSave() {
-    if (!quillRef.current) return
+  const handleSave = async () => {
+    if (!editor) return
     setSaving(true)
-    const html = quillRef.current.getSemanticHTML()
-    await onSave(html)
-    setSaving(false)
-    setEditing(false)
+    try {
+      await onSave(editor.getHTML())
+    } finally {
+      setSaving(false)
+    }
   }
 
-  function handleCancel() {
-    quillRef.current = null
-    setEditing(false)
+  const insertImage = () => {
+    const url = imageUrl.trim()
+    if (url && editor) {
+      editor.chain().focus().setImage({ src: url }).run()
+      setImageUrl('')
+      setShowImgInput(false)
+    }
   }
+
+  if (!editor) return null
 
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between mb-1">
-        <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">Body</label>
-        {!editing && (
-          <button className="text-xs text-indigo-600 hover:underline" onClick={() => setEditing(true)}>
-            Edit
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-1 p-2 border-b border-gray-200 bg-gray-50">
+        <ToolbarButton onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} title="Bold">
+          <strong>B</strong>
+        </ToolbarButton>
+        <ToolbarButton onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} title="Italic">
+          <em>I</em>
+        </ToolbarButton>
+        <ToolbarButton onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} title="Strikethrough">
+          <s>S</s>
+        </ToolbarButton>
+
+        <span className="w-px h-4 bg-gray-300 mx-0.5" />
+
+        <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} title="Heading 2">
+          H2
+        </ToolbarButton>
+        <ToolbarButton onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} title="Heading 3">
+          H3
+        </ToolbarButton>
+
+        <span className="w-px h-4 bg-gray-300 mx-0.5" />
+
+        <ToolbarButton onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} title="Bullet list">
+          • List
+        </ToolbarButton>
+        <ToolbarButton onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} title="Ordered list">
+          1. List
+        </ToolbarButton>
+        <ToolbarButton onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} title="Blockquote">
+          " Quote
+        </ToolbarButton>
+
+        <span className="w-px h-4 bg-gray-300 mx-0.5" />
+
+        <ToolbarButton onClick={() => setShowImgInput(!showImgInput)} active={showImgInput} title="Insert image">
+          🖼 Image
+        </ToolbarButton>
+        <ToolbarButton onClick={() => editor.chain().focus().unsetAllMarks().clearNodes().run()} active={false} title="Clear formatting">
+          ✕ Clear
+        </ToolbarButton>
+
+        <div className="ml-auto">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="px-3 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 disabled:opacity-50 font-medium"
+          >
+            {saving ? 'Saving…' : 'Save content'}
           </button>
-        )}
+        </div>
       </div>
 
-      {editing ? (
-        <div>
-          {/* Quill container */}
-          <div ref={containerRef} style={{ minHeight: 220 }} />
-
-          {/* Image gallery for click-to-insert */}
-          {images.length > 0 && (
-            <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-100">
-              <p className="text-xs text-gray-500 mb-2">Click an image to insert at cursor:</p>
-              <div className="flex flex-wrap gap-2">
-                {images.map((url, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => insertImage(url)}
-                    className="border border-gray-200 rounded overflow-hidden hover:border-indigo-400 hover:ring-1 hover:ring-indigo-300 transition-all"
-                    title={url}
-                  >
-                    <img
-                      src={url}
-                      alt=""
-                      className="h-16 w-24 object-cover"
-                      onError={(e) => { e.target.parentElement.style.display = 'none' }}
-                    />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <button
-              onClick={handleCancel}
-              className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200"
-            >
-              Cancel
-            </button>
-          </div>
+      {/* Image URL input */}
+      {showImgInput && (
+        <div className="flex gap-2 items-center px-3 py-2 border-b border-gray-200 bg-blue-50">
+          <input
+            type="url"
+            value={imageUrl}
+            onChange={(e) => setImageUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && insertImage()}
+            placeholder="https://example.com/image.jpg"
+            className="flex-1 border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={insertImage}
+            disabled={!imageUrl.trim()}
+            className="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 disabled:opacity-50"
+          >
+            Insert
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowImgInput(false); setImageUrl('') }}
+            className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded hover:bg-gray-200"
+          >
+            Cancel
+          </button>
         </div>
-      ) : (
-        <div
-          className="text-sm text-gray-800 leading-relaxed max-h-64 overflow-y-auto border border-gray-100 rounded-lg p-3 bg-gray-50 prose prose-sm max-w-none"
-          dangerouslySetInnerHTML={{ __html: plaintextToHtml(value) || '<em class="text-gray-400">No body text</em>' }}
-        />
       )}
+
+      {/* Editor content */}
+      <EditorContent
+        editor={editor}
+        dir={rtl ? 'rtl' : 'ltr'}
+        className="cms-editor p-4 min-h-64 focus:outline-none"
+      />
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Generic inline editable field (for non-body fields)
+// Editable meta field
 // ---------------------------------------------------------------------------
 
-function EditableField({ label, value, onSave, multiline = false, type = 'text' }) {
+function EditableField({ label, value, onSave, multiline = false, className = '' }) {
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value ?? '')
+  const [draft, setDraft] = useState(value || '')
   const [saving, setSaving] = useState(false)
 
-  async function handleSave() {
+  const handleSave = async () => {
     setSaving(true)
-    await onSave(draft)
-    setSaving(false)
-    setEditing(false)
-  }
-
-  function handleCancel() {
-    setDraft(value ?? '')
-    setEditing(false)
+    try {
+      await onSave(draft)
+      setEditing(false)
+    } catch (e) {
+      alert('Save failed: ' + (e?.response?.data?.detail || e.message))
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
-    <div className="mb-4">
-      <div className="flex items-center justify-between mb-1">
+    <div className={`space-y-1 ${className}`}>
+      <div className="flex items-center justify-between">
         <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</label>
         {!editing && (
           <button
+            onClick={() => { setDraft(value || ''); setEditing(true) }}
             className="text-xs text-indigo-600 hover:underline"
-            onClick={() => { setDraft(value ?? ''); setEditing(true) }}
           >
             Edit
           </button>
         )}
       </div>
       {editing ? (
-        <div className="space-y-2">
+        <div className="space-y-1">
           {multiline ? (
             <textarea
-              className="input-field text-sm"
-              rows={4}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              autoFocus
+              rows={3}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y"
             />
           ) : (
             <input
-              type={type}
-              className="input-field text-sm"
+              type="text"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              autoFocus
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           )}
           <div className="flex gap-2">
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50"
+              className="px-2 py-1 bg-indigo-600 text-white text-xs rounded hover:bg-indigo-700 disabled:opacity-50"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
             <button
-              onClick={handleCancel}
-              className="px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200"
+              onClick={() => setEditing(false)}
+              className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded hover:bg-gray-200"
             >
               Cancel
             </button>
           </div>
         </div>
       ) : (
-        <div className={`text-sm text-gray-800 ${multiline ? 'whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto border border-gray-100 rounded-lg p-3 bg-gray-50' : ''}`}>
+        <p className="text-sm text-gray-800 whitespace-pre-wrap">
           {value || <span className="text-gray-400 italic">Not set</span>}
-        </div>
+        </p>
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Page component
+// Main component
 // ---------------------------------------------------------------------------
 
 export default function ArticleDetail() {
   const { id } = useParams()
-  const navigate = useNavigate()
-  const qc = useQueryClient()
-  const [confirmRemove, setConfirmRemove] = useState(false)
+  const queryClient = useQueryClient()
 
-  const { data: article, isLoading, isError } = useQuery({
-    queryKey: ['cms-article', id],
+  const { data: article, isLoading, error } = useQuery({
+    queryKey: ['article', id],
     queryFn: () => getArticle(id),
-  })
-
-  const { data: categories = [] } = useQuery({
-    queryKey: ['cms-categories'],
-    queryFn: () => getCategories(),
   })
 
   const { data: sites = [] } = useQuery({
     queryKey: ['sites'],
-    queryFn: () => getSites(true),
+    queryFn: getSites,
   })
 
-  const updateMut = useMutation({
+  const updateMutation = useMutation({
     mutationFn: (data) => updateArticle(id, data),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cms-article', id] })
-      qc.invalidateQueries({ queryKey: ['cms-articles'] })
-    },
+    onSuccess: (updated) => queryClient.setQueryData(['article', id], updated),
   })
 
-  const removeMut = useMutation({
-    mutationFn: () => removeArticle(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cms-articles'] })
-      qc.invalidateQueries({ queryKey: ['article-stats'] })
-      navigate('/cms/articles')
-    },
-  })
+  if (isLoading) {
+    return <div className="p-8 text-center text-gray-500">Loading article…</div>
+  }
 
-  if (isLoading) return <Spinner />
-  if (isError || !article) return <p className="text-sm text-red-600">Article not found.</p>
+  if (error || !article) {
+    return <div className="p-8 text-center text-red-500">Article not found.</div>
+  }
 
-  const siteMap = Object.fromEntries(sites.map((s) => [s.id, s.name]))
-  const siteCategories = categories.filter((c) => c.site_id === article.site_id)
+  const site = sites.find((s) => s.id === article.site_id)
+  const siteLang = site?.language || 'en'
+  const rtl = ['he', 'ar'].includes(siteLang)
+
+  const aiFlags = (() => {
+    if (!article.ai_flags) return []
+    try { return JSON.parse(article.ai_flags) } catch { return article.ai_flags.split(',').map((f) => f.trim()).filter(Boolean) }
+  })()
 
   return (
-    <div className="max-w-4xl">
-      {/* Breadcrumb */}
-      <div className="text-sm text-gray-400 mb-4">
-        <Link to="/cms/articles" className="hover:text-gray-600">Articles</Link>
-        <span className="mx-2">/</span>
-        <span className="text-gray-700 line-clamp-1">{article.title}</span>
-      </div>
-
-      {/* Header strip */}
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
-        <div className="flex flex-wrap gap-2 items-center">
-          <AiScoreBadge score={article.ai_score} />
-          <StatusBadge status={article.status} />
-          {article.is_pinned && (
-            <span className="inline-block rounded-full px-3 py-1 text-sm font-medium bg-indigo-100 text-indigo-700">
-              📌 Pinned
-            </span>
-          )}
+    <div className="max-w-5xl mx-auto p-6 space-y-6">
+      {/* Top nav */}
+      <div className="flex items-center justify-between">
+        <Link to="/cms/articles" className="text-sm text-indigo-600 hover:underline">
+          ← Back to Articles
+        </Link>
+        <div className="flex items-center gap-3">
           {article.translated_from && (
-            <span className="inline-block rounded-full px-3 py-1 text-sm font-medium bg-purple-100 text-purple-700">
-              🌐 Translated from {article.translated_from.toUpperCase()}
+            <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">
+              Translated from {article.translated_from.toUpperCase()}
             </span>
           )}
-          <span className="text-sm text-gray-400">
-            {siteMap[article.site_id] ?? `Site #${article.site_id}`}
+          <span className={`px-2 py-1 rounded text-xs font-medium ${STATUS_COLORS[article.status] || ''}`}>
+            {article.status}
           </span>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => updateMut.mutate({ is_pinned: !article.is_pinned })}
-            className="px-3 py-1.5 rounded-lg border border-gray-200 text-sm text-gray-600 hover:border-gray-300 hover:text-gray-800"
-          >
-            {article.is_pinned ? 'Unpin' : 'Pin'}
-          </button>
-          <button
-            onClick={() => setConfirmRemove(true)}
-            className="px-3 py-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200 text-sm hover:bg-red-100"
-          >
-            Remove
-          </button>
-        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main content */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="card">
+      <div className="grid grid-cols-3 gap-6">
+        {/* Main content — 2/3 width */}
+        <div className="col-span-2 space-y-4">
+          {/* Title */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
             <EditableField
               label="Title"
               value={article.title}
-              onSave={(v) => updateMut.mutateAsync({ title: v })}
+              onSave={(v) => updateMutation.mutateAsync({ title: v })}
             />
+          </div>
 
-            <QuillBodyEditor
-              value={article.body}
-              images={article.images ?? []}
-              onSave={(v) => updateMut.mutateAsync({ body: v })}
+          {/* Main image */}
+          {article.main_image_url && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Main Image</p>
+              <img
+                src={article.main_image_url}
+                alt={article.title}
+                className="w-full rounded-lg object-cover"
+                style={{ maxHeight: '300px' }}
+              />
+            </div>
+          )}
+
+          {/* Content editor */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-3">Content</p>
+            <TipTapEditor
+              key={article.id}
+              value={article.content_html || ''}
+              rtl={rtl}
+              onSave={async (html) => {
+                await updateMutation.mutateAsync({ content_html: html })
+              }}
             />
+          </div>
+        </div>
 
+        {/* Sidebar — 1/3 width */}
+        <div className="space-y-4">
+          {/* AI Review */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">AI Review</p>
+            {article.ai_score != null ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-gray-200 rounded-full h-2">
+                    <div
+                      className="h-2 rounded-full bg-indigo-500"
+                      style={{ width: `${Math.round(article.ai_score * 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700">
+                    {Math.round(article.ai_score * 100)}%
+                  </span>
+                </div>
+                {aiFlags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {aiFlags.map((f) => (
+                      <span key={f} className="px-2 py-0.5 bg-red-50 text-red-600 text-xs rounded-full border border-red-200">
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-gray-400 italic text-sm">Not reviewed yet</p>
+            )}
+          </div>
+
+          {/* Status */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</p>
+            <select
+              value={article.status}
+              onChange={(e) => updateMutation.mutate({ status: e.target.value })}
+              className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+              <option value="pending">Pending</option>
+              <option value="published">Published</option>
+              <option value="removed">Removed</option>
+            </select>
+          </div>
+
+          {/* SEO */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">SEO</p>
             <EditableField
-              label="Image URL"
-              value={article.image_url}
-              type="url"
-              onSave={(v) => updateMut.mutateAsync({ image_url: v || null })}
+              label="SEO Title"
+              value={article.seo_title}
+              onSave={(v) => updateMutation.mutateAsync({ seo_title: v })}
             />
-            {article.image_url && (
-              <div className="mt-2 mb-4">
-                <img
-                  src={article.image_url}
-                  alt=""
-                  className="max-h-48 rounded-lg object-cover border border-gray-100"
-                  onError={(e) => { e.target.style.display = 'none' }}
+            <EditableField
+              label="Meta Description"
+              value={article.seo_description}
+              onSave={(v) => updateMutation.mutateAsync({ seo_description: v })}
+              multiline
+            />
+            <EditableField
+              label="Keywords"
+              value={article.seo_keywords}
+              onSave={(v) => updateMutation.mutateAsync({ seo_keywords: v })}
+            />
+          </div>
+
+          {/* Pin */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pin</p>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={article.is_pinned}
+                onChange={(e) => updateMutation.mutate({ is_pinned: e.target.checked })}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-gray-700">Pinned to top</span>
+            </label>
+            {article.is_pinned && (
+              <div className="space-y-1">
+                <label className="text-xs text-gray-500">Pin order</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={article.pin_order ?? ''}
+                  onChange={(e) =>
+                    updateMutation.mutate({ pin_order: e.target.value ? Number(e.target.value) : null })
+                  }
+                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  placeholder="0"
                 />
               </div>
             )}
           </div>
 
-          {/* SEO fields */}
-          <div className="card">
-            <h3 className="text-sm font-semibold text-gray-700 mb-4">SEO / Meta</h3>
-            <EditableField
-              label="SEO Title"
-              value={article.seo_title}
-              onSave={(v) => updateMut.mutateAsync({ seo_title: v || null })}
-            />
-            <EditableField
-              label="SEO Description"
-              value={article.seo_description}
-              multiline
-              onSave={(v) => updateMut.mutateAsync({ seo_description: v || null })}
-            />
-            <EditableField
-              label="SEO Keywords"
-              value={article.seo_keywords}
-              onSave={(v) => updateMut.mutateAsync({ seo_keywords: v || null })}
-            />
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-4">
-          {/* AI info */}
-          <div className="card">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">AI Analysis</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Score</span>
-                <AiScoreBadge score={article.ai_score} />
-              </div>
-              {article.ai_flags ? (
-                <div>
-                  <div className="text-gray-500 mb-1.5">Flags</div>
-                  <div className="flex flex-wrap gap-1">
-                    {(() => {
-                      try {
-                        const flags = JSON.parse(article.ai_flags)
-                        return (Array.isArray(flags) ? flags : [article.ai_flags]).map((flag) => (
-                          <span
-                            key={flag}
-                            className="inline-block bg-orange-50 text-orange-700 border border-orange-200 text-xs rounded px-2 py-0.5"
-                          >
-                            {flag}
-                          </span>
-                        ))
-                      } catch {
-                        return article.ai_flags.split(',').map((f) => f.trim()).filter(Boolean).map((flag) => (
-                          <span key={flag} className="inline-block bg-orange-50 text-orange-700 border border-orange-200 text-xs rounded px-2 py-0.5">
-                            {flag}
-                          </span>
-                        ))
-                      }
-                    })()}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-gray-400 text-xs italic">No flags</div>
-              )}
-            </div>
-          </div>
-
-          {/* Category */}
-          <div className="card">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Category</h3>
-            <select
-              className="input-field text-sm"
-              value={article.category_id ?? ''}
-              onChange={(e) => updateMut.mutate({ category_id: e.target.value ? Number(e.target.value) : null })}
-            >
-              <option value="">— None —</option>
-              {siteCategories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Metadata */}
-          <div className="card text-sm text-gray-500 space-y-2">
-            <div className="flex justify-between">
-              <span>ID</span>
-              <span className="text-gray-700 font-mono">{article.id}</span>
-            </div>
-            <div className="flex justify-between gap-2">
-              <span className="shrink-0">Source</span>
-              {article.source_url ? (
-                <a
-                  href={article.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-indigo-600 hover:underline truncate max-w-[160px]"
-                  title={article.source_url}
-                >
-                  {new URL(article.source_url).hostname} ↗
-                </a>
-              ) : (
-                <span className="text-gray-400">—</span>
-              )}
-            </div>
-            {article.translated_from && (
-              <div className="flex justify-between">
-                <span>Translated from</span>
-                <span className="text-purple-600 font-medium">{article.translated_from.toUpperCase()}</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span>Created</span>
-              <span className="text-gray-700">
-                {new Date(article.created_at).toLocaleDateString('en-GB', {
-                  day: '2-digit', month: 'short', year: 'numeric',
-                })}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span>Updated</span>
-              <span className="text-gray-700">
-                {new Date(article.updated_at).toLocaleDateString('en-GB', {
-                  day: '2-digit', month: 'short', year: 'numeric',
-                })}
-              </span>
-            </div>
-          </div>
-
-          {/* Images from source */}
-          {article.images && article.images.length > 0 && (
-            <div className="card">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                Source Images ({article.images.length})
-              </h3>
-              <div className="grid grid-cols-2 gap-2">
-                {article.images.slice(0, 6).map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noreferrer">
-                    <img
-                      src={url}
-                      alt=""
-                      className="w-full h-20 object-cover rounded border border-gray-100 hover:opacity-80 transition-opacity"
-                      onError={(e) => { e.target.parentElement.style.display = 'none' }}
-                    />
-                  </a>
-                ))}
-              </div>
-              {article.images.length > 6 && (
-                <p className="text-xs text-gray-400 mt-2">+{article.images.length - 6} more</p>
-              )}
+          {/* Source */}
+          {article.source_url && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
+              <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Source</p>
+              <a
+                href={article.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-indigo-600 hover:underline break-all"
+              >
+                {(() => { try { return new URL(article.source_url).hostname } catch { return article.source_url } })()}
+              </a>
             </div>
           )}
+
+          {/* Dates */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-1">
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Dates</p>
+            <p className="text-xs text-gray-600">
+              <span className="font-medium">Created:</span>{' '}
+              {new Date(article.created_at).toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-600">
+              <span className="font-medium">Updated:</span>{' '}
+              {new Date(article.updated_at).toLocaleString()}
+            </p>
+          </div>
         </div>
       </div>
-
-      {confirmRemove && (
-        <ConfirmDialog
-          title="Remove article?"
-          message="This will mark the article as removed."
-          confirmLabel="Remove"
-          loading={removeMut.isPending}
-          onConfirm={() => removeMut.mutate()}
-          onCancel={() => setConfirmRemove(false)}
-        />
-      )}
     </div>
   )
 }

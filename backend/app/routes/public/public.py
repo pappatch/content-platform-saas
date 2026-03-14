@@ -1,3 +1,16 @@
+"""
+Public (unauthenticated) API routes consumed by the site-renderer.
+
+All endpoints in this router are intentionally open — they serve published
+content to anonymous visitors.  Responses are filtered to only include
+published articles and active sites.
+
+NOTE: These endpoints return content_html which is rendered with
+dangerouslySetInnerHTML in the browser.  The HTML is sanitized before
+storage (app/utils/sanitize.py) but consider adding DOMPurify on the
+client as an additional defence layer.
+"""
+
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -6,7 +19,7 @@ from app.database import get_db
 from app.models.article import Article, ArticleStatus
 from app.models.category import Category
 from app.models.site import Site
-from app.schemas.article import ArticleResponse
+from app.schemas.article import ArticleListResponse, ArticleDetailResponse
 from app.schemas.category import CategoryResponse
 from app.schemas.site import SiteResponse
 
@@ -21,7 +34,7 @@ def get_public_site(site_id: int, db: Session = Depends(get_db)):
     return site
 
 
-@router.get("/sites/{site_id}/articles", response_model=List[ArticleResponse])
+@router.get("/sites/{site_id}/articles", response_model=List[ArticleListResponse])
 def get_public_articles(
     site_id: int,
     category_id: Optional[int] = Query(None),
@@ -47,12 +60,16 @@ def get_public_articles(
     return pinned + unpinned
 
 
-@router.get("/articles/{article_id}", response_model=ArticleResponse)
+@router.get("/articles/{article_id}", response_model=ArticleDetailResponse)
 def get_public_article(article_id: int, db: Session = Depends(get_db)):
-    article = db.query(Article).filter(
-        Article.id == article_id,
-        Article.status == ArticleStatus.published,
-    ).first()
+    article = (
+        db.query(Article)
+        .filter(
+            Article.id == article_id,
+            Article.status == ArticleStatus.published,
+        )
+        .first()
+    )
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
     return article

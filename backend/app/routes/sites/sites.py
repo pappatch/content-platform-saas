@@ -1,3 +1,13 @@
+"""
+Site management routes.
+
+GET              /sites          — list sites (any authenticated user)
+GET              /sites/{id}     — get one site (any authenticated user)
+POST             /sites          — create a site (admin only)
+PATCH            /sites/{id}     — update a site (admin only)
+DELETE           /sites/{id}     — soft-delete: set is_active=False (admin only)
+"""
+
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session

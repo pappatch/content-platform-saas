@@ -1,3 +1,12 @@
+"""
+FastAPI dependency functions for authentication and role-based access control.
+
+Usage in route handlers:
+    current_user: User = Depends(get_current_user)   # any authenticated user
+    current_user: User = Depends(require_editor)      # editor or admin
+    current_user: User = Depends(require_admin)       # admin only
+"""
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
@@ -12,7 +21,14 @@ def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db)
 ) -> User:
-    """מחלץ את המשתמש הנוכחי מה-JWT token"""
+    """
+    FastAPI dependency: extract and validate the JWT from the Authorization header.
+
+    Raises HTTP 401 if the token is missing, invalid, expired, or the user
+    no longer exists or is deactivated.
+
+    Returns the authenticated User ORM object.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -34,7 +50,11 @@ def get_current_user(
 
 
 def require_admin(current_user: User = Depends(get_current_user)) -> User:
-    """מאפשר גישה לאדמינים בלבד"""
+    """
+    FastAPI dependency: require the current user to have the 'admin' role.
+
+    Raises HTTP 403 for any authenticated non-admin user.
+    """
     if current_user.role != UserRole.admin:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -44,7 +64,11 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 
 def require_editor(current_user: User = Depends(get_current_user)) -> User:
-    """מאפשר גישה לעורכים ואדמינים"""
+    """
+    FastAPI dependency: require the current user to have 'editor' or 'admin' role.
+
+    Raises HTTP 403 for viewer-role users.
+    """
     if current_user.role not in [UserRole.admin, UserRole.editor]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

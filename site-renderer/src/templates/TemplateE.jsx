@@ -46,9 +46,10 @@ export default function TemplateE({ site, articles, categories, categoryMap, the
             {/* Featured */}
             {featured && (
               <div className="mb-8">
-                {featured.image_url && (
+                {featured.main_image_url && (
                   <Link to={`/article/${featured.id}`} className="block overflow-hidden rounded-xl mb-4">
-                    <img src={featured.image_url} alt="" className="w-full aspect-video object-cover hover:scale-105 transition-transform duration-300" />
+                    <img src={featured.main_image_url} alt="" className="w-full aspect-video object-cover hover:scale-105 transition-transform duration-300"
+                      onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }} />
                   </Link>
                 )}
                 {categoryMap[featured.category_id] && (
@@ -64,7 +65,7 @@ export default function TemplateE({ site, articles, categories, categoryMap, the
                   </h2>
                 </Link>
                 <p className="mt-2 text-sm leading-relaxed line-clamp-3" style={{ color: 'var(--color-muted)' }}>
-                  {excerpt(featured.body, 200)}
+                  {excerpt(featured, 200)}
                 </p>
                 <time className="block mt-2 text-xs" style={{ color: 'var(--color-muted)' }}>
                   {formatDate(featured.created_at)}

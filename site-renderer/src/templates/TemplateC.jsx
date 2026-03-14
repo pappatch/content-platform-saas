@@ -69,7 +69,7 @@ export default function TemplateC({ site, articles, categories, categoryMap, the
 
               {/* Excerpt */}
               <p className="mt-3 text-base leading-relaxed line-clamp-3" style={{ color: 'var(--color-muted)' }}>
-                {excerpt(article.body, 220)}
+                {excerpt(article, 220)}
               </p>
 
               <Link
@@ -77,7 +77,7 @@ export default function TemplateC({ site, articles, categories, categoryMap, the
                 className="inline-block mt-4 text-sm font-semibold hover:underline"
                 style={{ color: 'var(--color-secondary)' }}
               >
-                Read more →
+                {dir === 'rtl' ? '← Read more' : 'Read more →'}
               </Link>
             </article>
           )

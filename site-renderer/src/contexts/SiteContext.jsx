@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getSite, getArticles, getCategories } from '../api/public'
+import { DEFAULT_KEYWORDS } from '../utils/defaultImages'
 
 const SITE_ID = import.meta.env.VITE_SITE_ID
 
@@ -53,6 +54,15 @@ export function SiteProvider({ children }) {
     [siteQuery.data]
   )
 
+  // Derive keywords from site name for use in default image fallbacks.
+  // e.g. "Shih Tzu" → ['shih tzu', 'dog', 'puppy', 'pet', 'cute dog']
+  const siteKeywords = useMemo(() => {
+    const name = siteQuery.data?.name
+    if (!name) return DEFAULT_KEYWORDS
+    const nameKeyword = name.toLowerCase()
+    return [nameKeyword, ...DEFAULT_KEYWORDS.filter((k) => k !== nameKeyword)]
+  }, [siteQuery.data?.name])
+
   const value = {
     siteId: SITE_ID,
     site: siteQuery.data || null,
@@ -60,6 +70,7 @@ export function SiteProvider({ children }) {
     categories: categoriesQuery.data || [],
     categoryMap,
     theme,
+    siteKeywords,
     isLoading: siteQuery.isLoading || articlesQuery.isLoading || categoriesQuery.isLoading,
     isError: siteQuery.isError,
     error: siteQuery.error,

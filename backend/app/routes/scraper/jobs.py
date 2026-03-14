@@ -1,3 +1,13 @@
+"""
+Scrape job management routes.
+
+GET    /scraper/jobs          — list jobs (any authenticated user)
+GET    /scraper/jobs/{id}     — get one job (any authenticated user)
+POST   /scraper/jobs          — create a job (admin only)
+DELETE /scraper/jobs/{id}     — hard-delete a job (admin only)
+POST   /scraper/jobs/{id}/run — manually trigger a job run (admin only)
+"""
+
 from typing import List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session

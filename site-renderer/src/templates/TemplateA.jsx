@@ -44,12 +44,13 @@ export default function TemplateA({ site, articles, categories, categoryMap, the
         {/* Featured article */}
         {featured && (
           <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6" style={{ borderBottom: '2px solid var(--color-border)', paddingBottom: '2rem' }}>
-            {featured.image_url && (
+            {featured.main_image_url && (
               <Link to={`/article/${featured.id}`} className="block overflow-hidden rounded-lg">
-                <img src={featured.image_url} alt="" className="w-full aspect-video object-cover hover:scale-105 transition-transform duration-300" />
+                <img src={featured.main_image_url} alt="" className="w-full aspect-video object-cover hover:scale-105 transition-transform duration-300"
+                  onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }} />
               </Link>
             )}
-            <div className={featured.image_url ? '' : 'md:col-span-2'}>
+            <div className={featured.main_image_url ? '' : 'md:col-span-2'}>
               {featured.is_pinned && (
                 <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--color-secondary)' }}>★ Featured</span>
               )}
@@ -66,7 +67,7 @@ export default function TemplateA({ site, articles, categories, categoryMap, the
                 </h2>
               </Link>
               <p className="mt-3 text-base leading-relaxed line-clamp-4" style={{ color: 'var(--color-muted)' }}>
-                {excerpt(featured.body, 240)}
+                {excerpt(featured, 240)}
               </p>
               <time className="block mt-3 text-sm font-medium" style={{ color: 'var(--color-muted)' }}>
                 {formatDate(featured.created_at)}
@@ -80,9 +81,10 @@ export default function TemplateA({ site, articles, categories, categoryMap, the
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {rest.map((article) => (
               <div key={article.id} className="group">
-                {article.image_url && (
+                {article.main_image_url && (
                   <Link to={`/article/${article.id}`} className="block overflow-hidden rounded mb-2">
-                    <img src={article.image_url} alt="" className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-300" />
+                    <img src={article.main_image_url} alt="" className="w-full aspect-video object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e) => { e.currentTarget.parentElement.style.display = 'none' }} />
                   </Link>
                 )}
                 {article.is_pinned && (
@@ -101,7 +103,7 @@ export default function TemplateA({ site, articles, categories, categoryMap, the
                   </h3>
                 </Link>
                 <p className="mt-1 text-sm line-clamp-2" style={{ color: 'var(--color-muted)' }}>
-                  {excerpt(article.body)}
+                  {excerpt(article)}
                 </p>
                 <time className="block mt-1 text-xs" style={{ color: 'var(--color-muted)' }}>
                   {formatDate(article.created_at)}

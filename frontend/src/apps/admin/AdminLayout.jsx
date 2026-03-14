@@ -6,8 +6,11 @@ const NAV_ITEMS = [
   { to: '/admin', label: 'Dashboard', end: true },
   { to: '/admin/sites', label: 'Sites' },
   { to: '/admin/scrape-jobs', label: 'Scrape Jobs' },
+  { to: '/admin/trends', label: 'Trends' },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/analytics', label: 'Analytics' },
+  { to: '/admin/architecture', label: 'Architecture' },
+  { to: '/admin/settings', label: 'Settings ⚙️' },
 ]
 
 export default function AdminLayout() {

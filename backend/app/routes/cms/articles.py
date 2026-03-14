@@ -1,12 +1,27 @@
+"""
+CMS article management routes.
+
+All routes require authentication (get_current_user).
+Write operations (create, update, delete) additionally require the editor role.
+
+content_html is sanitized by sanitize_html() on every write to prevent XSS.
+DELETE is implemented as a soft-delete (status=removed) to preserve audit trail.
+"""
+
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.article import Article, ArticleStatus
-from app.models.user import User
-from app.schemas.article import ArticleCreate, ArticleUpdate, ArticleResponse
+from app.schemas.article import (
+    ArticleCreate,
+    ArticleUpdate,
+    ArticleListResponse,
+    ArticleDetailResponse,
+)
 from app.security.permissions import get_current_user, require_editor
+from app.utils.sanitize import sanitize_html
 
 router = APIRouter(prefix="/cms/articles", tags=["CMS - Articles"])
 
@@ -15,9 +30,8 @@ router = APIRouter(prefix="/cms/articles", tags=["CMS - Articles"])
 def get_article_stats(
     site_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
-    """Return article counts grouped by status (optionally scoped to a site)."""
     q = db.query(Article.status, func.count(Article.id))
     if site_id:
         q = q.filter(Article.site_id == site_id)
@@ -28,12 +42,12 @@ def get_article_stats(
     return {"total": sum(counts.values()), **counts}
 
 
-@router.get("", response_model=List[ArticleResponse])
+@router.get("", response_model=List[ArticleListResponse])
 def list_articles(
     site_id: Optional[int] = Query(None),
     article_status: Optional[ArticleStatus] = Query(None, alias="status"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     query = db.query(Article)
     if site_id is not None:
@@ -43,11 +57,11 @@ def list_articles(
     return query.order_by(Article.created_at.desc()).all()
 
 
-@router.get("/{article_id}", response_model=ArticleResponse)
+@router.get("/{article_id}", response_model=ArticleDetailResponse)
 def get_article(
     article_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:
@@ -55,34 +69,40 @@ def get_article(
     return article
 
 
-@router.post("", response_model=ArticleResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ArticleDetailResponse, status_code=status.HTTP_201_CREATED)
 def create_article(
     article_data: ArticleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_editor),
+    current_user=Depends(require_editor),
 ):
     if article_data.source_url:
         existing = db.query(Article).filter(Article.source_url == article_data.source_url).first()
         if existing:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="source_url already exists")
-    article = Article(**article_data.model_dump())
+    data = article_data.model_dump()
+    if data.get("content_html"):
+        data["content_html"] = sanitize_html(data["content_html"])
+    article = Article(**data)
     db.add(article)
     db.commit()
     db.refresh(article)
     return article
 
 
-@router.patch("/{article_id}", response_model=ArticleResponse)
+@router.patch("/{article_id}", response_model=ArticleDetailResponse)
 def update_article(
     article_id: int,
     article_data: ArticleUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_editor),
+    current_user=Depends(require_editor),
 ):
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Article not found")
-    for field, value in article_data.model_dump(exclude_unset=True).items():
+    data = article_data.model_dump(exclude_unset=True)
+    if "content_html" in data and data["content_html"]:
+        data["content_html"] = sanitize_html(data["content_html"])
+    for field, value in data.items():
         setattr(article, field, value)
     db.commit()
     db.refresh(article)
@@ -93,7 +113,7 @@ def update_article(
 def delete_article(
     article_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_editor),
+    current_user=Depends(require_editor),
 ):
     article = db.query(Article).filter(Article.id == article_id).first()
     if not article:

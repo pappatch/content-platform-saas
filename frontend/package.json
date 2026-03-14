@@ -9,11 +9,16 @@
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.0",
+    "@tiptap/extension-image": "^3.20.1",
+    "@tiptap/pm": "^3.20.1",
+    "@tiptap/react": "^3.20.1",
+    "@tiptap/starter-kit": "^3.20.1",
     "axios": "^1.7.9",
     "quill": "^2.0.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.28.0"
+    "react-router-dom": "^6.28.0",
+    "recharts": "^3.8.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",

@@ -1,0 +1,326 @@
+# Security & Quality Code Audit
+
+**Date:** March 14, 2026
+**Auditor:** Claude Code (claude-sonnet-4-6)
+**Scope:** Full codebase — backend, frontend, site-renderer
+
+---
+
+## Files Scanned
+
+### Backend
+- `backend/main.py`
+- `backend/app/config.py`
+- `backend/app/database.py`
+- `backend/app/models/__init__.py`
+- `backend/app/models/article.py`
+- `backend/app/models/article_block.py`
+- `backend/app/models/user.py`
+- `backend/app/models/site.py`
+- `backend/app/schemas/article.py`
+- `backend/app/schemas/user.py`
+- `backend/app/schemas/analytics.py`
+- `backend/app/routes/auth.py`
+- `backend/app/routes/sites/sites.py`
+- `backend/app/routes/cms/articles.py`
+- `backend/app/routes/cms/categories.py`
+- `backend/app/routes/public/public.py`
+- `backend/app/routes/admin/users.py`
+- `backend/app/routes/admin/analytics.py`
+- `backend/app/routes/scraper/jobs.py`
+- `backend/app/security/auth.py`
+- `backend/app/security/permissions.py`
+- `backend/app/services/ai_review.py`
+- `backend/app/services/scraper.py`
+- `backend/app/services/image_service.py`
+- `backend/app/utils/sanitize.py`
+- `backend/app/workers/scrape_worker.py`
+- `backend/app/workers/review_worker.py`
+
+### Frontend
+- `frontend/src/api/client.js`
+- `frontend/src/apps/admin/Dashboard.jsx`
+- `frontend/src/apps/cms/ArticleDetail.jsx`
+- `frontend/src/apps/review/Dashboard.jsx`
+- `frontend/src/apps/review/ReviewQueue.jsx`
+- `frontend/src/apps/review/ArticlePreviewModal.jsx`
+- `frontend/src/apps/review/ConfirmDialog.jsx`
+- `frontend/src/contexts/AuthContext.jsx`
+
+### Site-renderer
+- `site-renderer/src/index.css`
+- `site-renderer/src/contexts/SiteContext.jsx`
+- `site-renderer/src/components/ArticleCard.jsx`
+- `site-renderer/src/components/ArticleDetail.jsx`
+- `site-renderer/src/templates/TemplateA.jsx`
+- `site-renderer/src/templates/TemplateB.jsx`
+- `site-renderer/src/templates/TemplateC.jsx`
+- `site-renderer/src/templates/TemplateD.jsx`
+- `site-renderer/src/templates/TemplateE.jsx`
+- `site-renderer/src/utils/defaultImages.js`
+
+---
+
+## Critical Issues Found and Fixed
+
+### 1. Privilege Escalation via Self-Registration
+
+**File:** `backend/app/routes/auth.py` line 13 (`register` function)
+**Severity:** CRITICAL
+**Description:** The `POST /auth/register` endpoint accepted an arbitrary `role` field from the request body. A caller could POST `{"email": "...", "password": "...", "full_name": "...", "role": "admin"}` to create an admin account for themselves.
+**Fix Applied:** The `register` handler now forces `role=UserRole.viewer` regardless of what the caller sends. The field still exists in `UserCreate` schema for compatibility but is ignored during registration. A comment explains the design decision.
+
+### 2. Database `connect_args` Incompatibility with Postgres
+
+**File:** `backend/app/database.py` line 8
+**Severity:** CRITICAL (would crash on Postgres deployment)
+**Description:** `connect_args={"check_same_thread": False}` was applied unconditionally. This argument is SQLite-specific; passing it to a Postgres connection raises a `TypeError` and prevents the application from starting.
+**Fix Applied:** `_connect_args` is now set only when `DATABASE_URL` starts with `sqlite`.
+
+### 3. HTML Sanitizer Missing Several Dangerous Tags
+
+**File:** `backend/app/utils/sanitize.py`
+**Severity:** HIGH
+**Description:** The regex denylist did not include `<svg>`, `<math>`, `<template>`, `<meta>`, `<link>`, `<base>`, or the `srcdoc` attribute. An attacker who could control `content_html` (e.g. via a compromised scrape source) could inject XSS payloads through these vectors.
+- `<svg onload=...>` is a classic XSS vector not covered by the old pattern.
+- `<meta http-equiv="refresh">` enables redirect attacks.
+- `srcdoc` on any element renders arbitrary HTML.
+**Fix Applied:** Added all missing tags to both `_DANGEROUS_TAGS` and `_DANGEROUS_SELF_CLOSING` patterns; added `_SRCDOC_ATTR` pattern; added `formaction` and `vbscript:` to the attribute denylist; added clear comments explaining the denylist limitation and recommending DOMPurify.
+
+### 4. Hardcoded `localhost:8000` in Frontend API Client
+
+**File:** `frontend/src/api/client.js` line 6
+**Severity:** MEDIUM (production deployment blocker)
+**Description:** The `baseURL` was hardcoded to `http://localhost:8000`. Any production build would silently point at localhost and fail.
+**Fix Applied:** Now reads `import.meta.env.VITE_API_URL` with `http://localhost:8000` as a dev-only fallback. Set `VITE_API_URL` in `frontend/.env.production` before building for deployment.
+
+---
+
+## Medium Issues Found and Fixed (Docstrings / Comments)
+
+All the following files had missing or Hebrew-only docstrings. English docstrings and module-level descriptions were added:
+
+| File | What was added |
+|------|---------------|
+| `backend/app/config.py` | Module docstring; `Settings` class docstring; `get_settings` docstring |
+| `backend/app/database.py` | Updated `get_db` docstring (English); comment explaining SQLite-only `connect_args` |
+| `backend/app/models/__init__.py` | Module docstring explaining import purpose for Alembic autogenerate |
+| `backend/app/models/article.py` | Module docstring describing status transitions |
+| `backend/app/security/auth.py` | Module docstring with security invariants; English docstrings on all functions |
+| `backend/app/security/permissions.py` | Module docstring with usage examples; English docstrings on all functions |
+| `backend/app/routes/auth.py` | Module docstring listing routes; `register` docstring explains role override |
+| `backend/app/routes/cms/articles.py` | Module docstring |
+| `backend/app/routes/cms/categories.py` | Module docstring |
+| `backend/app/routes/public/public.py` | Module docstring with XSS note |
+| `backend/app/routes/admin/analytics.py` | Module docstring with rate-limit warning; function docstrings |
+| `backend/app/routes/admin/users.py` | Module docstring |
+| `backend/app/routes/sites/sites.py` | Module docstring |
+| `backend/app/routes/scraper/jobs.py` | Module docstring |
+| `backend/app/services/scraper.py` | `_complete_job` and `_fail_job` docstrings |
+| `backend/main.py` | `lifespan` docstring; `health_check` docstring |
+| `frontend/src/api/client.js` | JSDoc comment explaining baseURL resolution |
+| `frontend/src/apps/review/ArticlePreviewModal.jsx` | Security comment on `dangerouslySetInnerHTML` |
+| `site-renderer/src/components/ArticleDetail.jsx` | Security comment on `dangerouslySetInnerHTML` |
+
+---
+
+## Security Assessment — Items Confirmed Safe
+
+### JWT Security
+- **Algorithm pinned:** `decode_access_token` calls `jwt.decode(..., algorithms=[settings.algorithm])`. Passing an explicit list to python-jose makes the `none` algorithm attack impossible.
+- **Expiry enforced:** `exp` claim set on every token; python-jose rejects expired tokens and `decode_access_token` returns `None`.
+- **Secret from env:** `settings.secret_key` read from environment variable only.
+
+### API Key Exposure
+- No API keys hardcoded anywhere. All keys (`ANTHROPIC_API_KEY`, `TAVILY_API_KEY`, `GOOGLE_API_KEY`, `UNSPLASH_ACCESS_KEY`) are read via `Settings` (pydantic-settings from `.env`).
+- `/docs` (Swagger UI) is disabled in non-debug environments: `docs_url="/docs" if settings.debug else None`.
+
+### CORS
+- `allow_origins` is explicitly locked to `localhost:5173–5177` (dev ports only). Not `"*"`. This is correct for development; see recommendation below for production.
+
+### SQL Injection
+- All DB queries use the SQLAlchemy ORM with parameterised queries. No raw string interpolation in any query found.
+
+### SSRF
+- `validate_url()` in `scraper.py` resolves hostname to IP and blocks all RFC-1918, loopback, link-local, and ULA IPv6 ranges before any HTTP request.
+
+### Auth Coverage on Routes
+- All non-public routes have `Depends(get_current_user)` or a higher-privilege dependency.
+- `POST /analytics/track` is intentionally unauthenticated (called by the site renderer for anonymous visitors). This is by design but carries risk (see recommendations).
+
+### Worker Error Handling
+- Both `scrape_worker.py` and `review_worker.py` wrap their inner loops in `try/except Exception` + `logger.exception(...)`. A single bad article or job cannot crash the worker.
+
+---
+
+## Recommendations (Not Auto-Fixed)
+
+These items require discussion or broader changes and were not auto-fixed.
+
+### R1 — Rate Limiting on High-Risk Endpoints
+
+**Risk:** Medium-High
+**Affected endpoints:**
+- `POST /analytics/track` — unauthenticated, no rate limit. A bot can generate millions of fake page-view events inflating analytics and filling the DB.
+- `POST /auth/login` — brute-force password guessing is unlimited.
+- `POST /auth/register` — account enumeration / spam account creation is unlimited.
+
+**Recommendation:** Add [slowapi](https://github.com/laurentS/slowapi) (FastAPI-compatible rate limiter) or an nginx rate-limit layer. For analytics, a token-bucket of ~10 req/s per IP is reasonable. For auth, ~5 req/min per IP.
+
+### R2 — DOMPurify Client-Side Sanitization
+
+**Risk:** Medium
+**Affected files:**
+- `site-renderer/src/components/ArticleDetail.jsx` (public-facing, all site visitors)
+- `frontend/src/apps/review/ArticlePreviewModal.jsx` (internal, editors only)
+
+**Description:** Both components render `content_html` with `dangerouslySetInnerHTML`. The HTML is sanitized on the backend before storage, but the server-side sanitizer is a regex denylist (inherently weaker than an allowlist). If any bypass is found, XSS would execute in viewers' browsers.
+
+**Recommendation:** Add `dompurify` (`npm install dompurify`) and wrap the render:
+```jsx
+import DOMPurify from 'dompurify'
+<div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content_html) }} />
+```
+This is defence-in-depth: even if the server-side sanitizer is bypassed, DOMPurify would strip the payload in the browser.
+
+### R3 — CORS Configuration for Production
+
+**Risk:** Medium (post-deployment)
+**File:** `backend/main.py` lines 53–63
+
+The current CORS config allows only `localhost:5173–5177`, which is correct for development. Before deploying to AWS:
+- Add the actual production domain(s) to `allow_origins`.
+- Consider loading `allow_origins` from a `CORS_ORIGINS` env variable (comma-separated list).
+- Never use `allow_origins=["*"]` in production because `allow_credentials=True` combined with a wildcard origin is rejected by the browser anyway.
+
+### R4 — Missing Database Indexes
+
+**Risk:** Low (performance) / Medium at scale
+
+The following columns are frequently used in `WHERE` clauses but lack explicit indexes:
+
+| Table | Column | Used in |
+|-------|--------|---------|
+| `articles` | `status` | `review_worker`, `/public/sites/{id}/articles`, CMS list |
+| `articles` | `site_id` | Almost every article query |
+| `analytics` | `created_at` | Analytics list endpoint (ORDER BY) |
+| `analytics` | `site_id` | Analytics filter |
+
+The `id` (PK) and `source_url` (unique) columns are already indexed.
+
+**Recommendation:** Create a new Alembic migration:
+```python
+op.create_index('ix_articles_status', 'articles', ['status'])
+op.create_index('ix_articles_site_id', 'articles', ['site_id'])
+op.create_index('ix_analytics_site_id', 'analytics', ['site_id'])
+op.create_index('ix_analytics_created_at', 'analytics', ['created_at'])
+```
+
+### R5 — N+1 Query Pattern in Public Articles Endpoint
+
+**Risk:** Low (current scale) / Medium at scale
+**File:** `backend/app/routes/public/public.py`, `get_public_articles`
+
+The endpoint fetches all published articles with `.all()` and then sorts them in Python (pinned vs unpinned). At scale (thousands of articles), this loads all rows into memory. The sorting should be done in SQL:
+
+```python
+# Replace Python-side sort with a DB-level ORDER BY
+from sqlalchemy import case
+query = query.order_by(
+    Article.is_pinned.desc(),
+    case((Article.is_pinned == True, Article.pin_order), else_=0).asc(),
+    Article.created_at.desc()
+)
+return query.all()
+```
+
+### R6 — `GET /analytics` Has No Pagination
+
+**Risk:** Low (current scale) / High at scale
+**File:** `backend/app/routes/admin/analytics.py`, `list_events`
+
+Returns all matching analytics rows with no limit. As the analytics table grows this will become very slow and return very large payloads.
+
+**Recommendation:** Add `limit: int = Query(100, le=1000)` and `offset: int = Query(0)` parameters.
+
+### R7 — `GET /cms/articles` Returns All Articles With No Pagination
+
+**Risk:** Low (current scale) / Medium at scale
+**File:** `backend/app/routes/cms/articles.py`, `list_articles`
+
+Same pattern as R6. The CMS articles list and the admin dashboard fetch all articles with no limit, which will become slow as content grows.
+
+### R8 — Regex HTML Sanitizer vs Allowlist Library
+
+**Risk:** Medium (ongoing)
+**File:** `backend/app/utils/sanitize.py`
+
+The current sanitizer is a denylist (remove known-bad patterns). Denylists are fundamentally weaker than allowlists because attackers can find novel bypass vectors. For production, consider replacing with [bleach](https://bleach.readthedocs.io/) or [nh3](https://nh3.readthedocs.io/) which use allowlist-based sanitization backed by a real HTML parser (not regex).
+
+Example with nh3 (Rust-backed, much faster than bleach):
+```python
+import nh3
+
+ALLOWED_TAGS = {"h2", "h3", "h4", "p", "strong", "em", "blockquote", "ul", "ol", "li", "img", "a"}
+ALLOWED_ATTRIBUTES = {"img": {"src", "alt"}, "a": {"href", "rel", "target"}}
+
+def sanitize_html(html: str) -> str:
+    return nh3.clean(html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES)
+```
+
+### R9 — `source.unsplash.com/featured` Endpoint Deprecated
+
+**Risk:** Low (reliability)
+**File:** `site-renderer/src/utils/defaultImages.js`
+
+The URL pattern `https://source.unsplash.com/featured/?{keyword}` uses Unsplash's legacy Source API which Unsplash has announced as deprecated. It may stop working without notice.
+
+**Recommendation:** Use the Unsplash API endpoint (`/search/photos`) directly (already used in `image_service.py`) and cache keyword→URL mappings, or switch to a maintained service.
+
+### R10 — `app_env` Exposed in Health Endpoint
+
+**Risk:** Low (information disclosure)
+**File:** `backend/main.py`, `health_check`
+
+The `/health` endpoint returns `{"status": "ok", "env": "production"}`. Confirming you are in production is minor information leakage. Consider returning only `{"status": "ok"}` or restricting the env field to internal/admin callers.
+
+---
+
+## Code Quality Observations
+
+### Dead Code
+- `app/models/article_block.py` — `BlockType` enum has no DB table. Used only by the scraper's HTML parser. A comment clarifying this was added to `models/__init__.py` to prevent future confusion.
+
+### Duplicate Component
+- `AiScoreBadge` and `FlagList`/`FlagChip` are defined independently in both `ReviewQueue.jsx` and `ArticlePreviewModal.jsx`. They could be extracted to a shared `frontend/src/components/` file.
+
+### Inconsistent Error Handling in Frontend
+- `EditableField.handleSave` in `ArticleDetail.jsx` uses `alert()` to show save errors. This is inconsistent with the rest of the UI which uses React Query mutation state. Consider using a toast notification system.
+
+### Missing `aria-label` on Icon Buttons
+- Several toolbar buttons in `TipTapEditor` (`ArticleDetail.jsx`) use emoji or short text as labels without `aria-label` attributes, reducing accessibility.
+
+### `connect_args` Comment in Hebrew
+- The original `database.py` had a Hebrew comment (`# נדרש רק ל-SQLite`). This is fine for a single developer but inconsistent with the rest of the codebase's English comments. Translated to English in the fix.
+
+---
+
+## Overall Security Assessment
+
+**Rating: GOOD with minor gaps**
+
+The codebase demonstrates solid security awareness:
+- JWT implementation is correct (algorithm pinned, expiry enforced)
+- All API keys come from environment variables
+- SSRF protection is comprehensive
+- No SQL injection vectors found
+- Role-based access control is consistently applied
+- Soft-delete pattern prevents accidental data loss
+
+The main gaps are:
+1. The self-registration role escalation (now fixed) was a significant privilege escalation vector
+2. The HTML sanitizer denylist is weaker than an allowlist approach
+3. No rate limiting on authentication or analytics endpoints (acceptable for dev, must fix before production)
+4. DOMPurify is absent on the client side
+
+The codebase is **ready for continued development** and **not ready for public production** without addressing R1 (rate limiting) and R2 (DOMPurify) at minimum.

@@ -1,3 +1,15 @@
+"""
+CMS category management routes.
+
+GET    /cms/categories          — list categories (any authenticated user)
+GET    /cms/categories/{id}     — get one category (any authenticated user)
+POST   /cms/categories          — create (editor/admin)
+PATCH  /cms/categories/{id}     — update (editor/admin)
+DELETE /cms/categories/{id}     — hard-delete if no articles reference it (admin only)
+
+Slug uniqueness is enforced per site (same slug can exist on different sites).
+"""
+
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session

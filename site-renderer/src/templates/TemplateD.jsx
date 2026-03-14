@@ -66,8 +66,9 @@ export default function TemplateD({ site, articles, categories, categoryMap, the
               >
                 {/* Top accent */}
                 <div className="h-1" style={{ background: `linear-gradient(90deg, var(--color-primary), var(--color-secondary))` }} />
-                {article.image_url && (
-                  <img src={article.image_url} alt="" className="w-full aspect-video object-cover" />
+                {article.main_image_url && (
+                  <img src={article.main_image_url} alt="" className="w-full aspect-video object-cover"
+                    onError={(e) => { e.currentTarget.style.display = 'none' }} />
                 )}
                 <div className="flex-1 p-4 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
@@ -80,7 +81,7 @@ export default function TemplateD({ site, articles, categories, categoryMap, the
                     {article.seo_title || article.title}
                   </h3>
                   <p className="text-sm line-clamp-2" style={{ color: 'var(--color-muted)' }}>
-                    {excerpt(article.body)}
+                    {excerpt(article)}
                   </p>
                   <time className="text-xs font-medium" style={{ color: 'var(--color-muted)' }}>
                     {formatDate(article.created_at)}

@@ -1,9 +1,14 @@
 import { Link } from 'react-router-dom'
 import { formatDate } from './ArticleCard'
+import { useSite } from '../contexts/SiteContext'
+import { getDefaultImage } from '../utils/defaultImages'
 
 export default function ArticleDetail({ article, category, site, theme }) {
+  const { siteKeywords } = useSite()
   const title = article.seo_title || article.title
-  const paragraphs = article.body.split(/\n+/).filter(Boolean)
+  const dir = site?.text_direction || 'ltr'
+  const heroSrc = article.main_image_url || getDefaultImage(siteKeywords, article.id)
+  const fallbackSrc = getDefaultImage(siteKeywords, article.id)
 
   return (
     <article
@@ -30,7 +35,7 @@ export default function ArticleDetail({ article, category, site, theme }) {
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-10">
+      <div className="max-w-3xl mx-auto px-4 py-10" dir={dir}>
         {/* Category label */}
         {category && (
           <Link
@@ -70,21 +75,35 @@ export default function ArticleDetail({ article, category, site, theme }) {
         </div>
 
         {/* Hero image */}
-        {article.image_url && (
-          <div className="mt-6 rounded-xl overflow-hidden">
-            <img
-              src={article.image_url}
-              alt={article.title}
-              className="w-full object-cover max-h-96"
-            />
-          </div>
-        )}
+        <div className="mt-6 rounded-xl overflow-hidden">
+          <img
+            src={heroSrc}
+            alt={article.title}
+            className="w-full object-cover max-h-96"
+            onError={(e) => {
+              if (e.currentTarget.src !== fallbackSrc) {
+                e.currentTarget.onerror = null
+                e.currentTarget.src = fallbackSrc
+              }
+            }}
+          />
+        </div>
 
-        {/* Body */}
-        <div className="mt-8 space-y-4 text-base leading-relaxed">
-          {paragraphs.map((para, i) => (
-            <p key={i} style={{ color: 'var(--color-text)' }}>{para}</p>
-          ))}
+        {/* Article body */}
+        <div className="mt-8 article-content">
+          {article.content_html
+            ? (
+              // SECURITY: content_html is sanitized server-side (app/utils/sanitize.py)
+              // before being stored.  For defence-in-depth, consider adding DOMPurify:
+              //   import DOMPurify from 'dompurify'
+              //   dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(article.content_html) }}
+              <div
+                dangerouslySetInnerHTML={{ __html: article.content_html }}
+                style={{ color: 'var(--color-text)' }}
+              />
+            )
+            : <p style={{ color: 'var(--color-muted)' }}>No content available.</p>
+          }
         </div>
 
         {/* Footer */}
@@ -94,7 +113,7 @@ export default function ArticleDetail({ article, category, site, theme }) {
             className="text-sm font-medium hover:underline"
             style={{ color: 'var(--color-secondary)' }}
           >
-            ← Back to {site?.name || 'Home'}
+            {dir === 'rtl' ? `→ ${site?.name || 'Home'}` : `← Back to ${site?.name || 'Home'}`}
           </Link>
         </div>
       </div>

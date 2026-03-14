@@ -2,8 +2,20 @@ import axios from 'axios'
 
 const TOKEN_KEY = 'auth_token'
 
+/**
+ * Axios client pre-configured for the Content Platform API.
+ *
+ * Base URL resolution order:
+ *   1. VITE_API_URL env variable (set in frontend/.env or at build time)
+ *   2. http://localhost:8000 as a dev fallback
+ *
+ * For production builds, set VITE_API_URL to the real API origin in your
+ * CI/CD pipeline or .env.production file so the hardcoded localhost is
+ * never used outside of local development.
+ */
 const api = axios.create({
-  baseURL: 'http://localhost:8000',
+  // SECURITY NOTE: do not hardcode a production URL here — use VITE_API_URL.
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
   headers: { 'Content-Type': 'application/json' },
 })
 

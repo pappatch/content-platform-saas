@@ -1,3 +1,13 @@
+"""
+Admin user-management routes (admin role required for all endpoints).
+
+GET   /admin/users       — list all users
+PATCH /admin/users/{id}  — update role, name, or active status
+
+SECURITY: an admin cannot deactivate their own account (guarded in update_user)
+to prevent accidental lock-out.
+"""
+
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session

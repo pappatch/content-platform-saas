@@ -1,3 +1,14 @@
+"""
+Analytics routes.
+
+POST /analytics/track — unauthenticated; called by the site renderer on every
+    page view.  The caller's IP is SHA-256 hashed (never stored in plaintext).
+    NOTE: This endpoint has no rate limiting.  A bot can flood it with fake
+    events.  Consider adding a CAPTCHA or IP-based rate limiter for production.
+
+GET  /analytics — admin-only; returns all stored events with optional filters.
+"""
+
 import hashlib
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, Query
@@ -17,6 +28,12 @@ def track_event(
     request: Request,
     db: Session = Depends(get_db),
 ):
+    """
+    Record a page-view event from the site renderer (unauthenticated).
+
+    The caller's IP address is SHA-256 hashed before storage so raw IPs
+    are never persisted (GDPR-friendly).  The hash is not reversible.
+    """
     raw_ip = request.client.host if request.client else "unknown"
     ip_hash = hashlib.sha256(raw_ip.encode()).hexdigest()
     event = Analytics(
@@ -40,6 +57,12 @@ def list_events(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
+    """
+    List analytics events with optional filters (admin only).
+
+    NOTE: This returns all matching rows with no pagination.  For large
+    deployments consider adding limit/offset parameters.
+    """
     query = db.query(Analytics)
     if site_id is not None:
         query = query.filter(Analytics.site_id == site_id)
