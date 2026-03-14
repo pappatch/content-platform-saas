@@ -308,12 +308,27 @@ async def ai_review_and_enrich(article_id: int) -> None:
             if isinstance(imgs, list) and imgs:
                 site_defaults = imgs
 
+        # Collect image URLs already in use on this site so the new article
+        # gets a unique photo (duplicate prevention).
+        existing_site_urls: set[str] = {
+            row[0]
+            for row in db.query(Article.main_image_url)
+            .filter(
+                Article.site_id == article.site_id,
+                Article.main_image_url.isnot(None),
+                Article.id != article_id,
+            )
+            .all()
+            if row[0]
+        }
+
         image_keywords = article.seo_keywords or article.title or ""
         image_url = await validate_and_fix_article_image(
             article_id,
             article.main_image_url,
             image_keywords,
             site_defaults,
+            excluded_urls=existing_site_urls,
         )
         if image_url:
             article.main_image_url = image_url

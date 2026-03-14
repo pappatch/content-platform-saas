@@ -130,15 +130,17 @@ async def validate_and_fix_article_image(
     current_url: str | None,
     keywords: "str | list[str]",
     site_default_images: list[str] | None = None,
+    excluded_urls: "set[str] | None" = None,
 ) -> str | None:
     """
     Return a validated image URL for the article.
 
     Algorithm:
     1. If *current_url* passes validation → return it unchanged.
-    2. Call ``enrich_article_images(article_id, keywords)`` — when *keywords* is
-       a ``list[str]`` (e.g. site scrape keywords), the most-specific term is
-       tried first; subsequent entries are used only as fallbacks.
+    2. Call ``enrich_article_images(article_id, keywords, excluded_urls)`` — when
+       *keywords* is a ``list[str]`` (e.g. site scrape keywords), the most-specific
+       term is tried first; subsequent entries are used only as fallbacks.
+       *excluded_urls* prevents assigning a photo already used on the same site.
     3. Fallback: return first valid URL from *site_default_images*.
     4. If all fail: return None.
 
@@ -148,6 +150,8 @@ async def validate_and_fix_article_image(
         keywords:            Str or ordered list[str] for the Unsplash query
                              (site scrape keywords preferred).
         site_default_images: Pre-curated URLs from ``site.config.default_images``.
+        excluded_urls:       URLs already in use on the same site; passed through
+                             to ``enrich_article_images`` for duplicate prevention.
 
     Returns:
         A validated URL string, or None if no valid image could be obtained.
@@ -171,7 +175,7 @@ async def validate_and_fix_article_image(
         )
 
     # Step 2 — Unsplash (handles list ordering internally: specific → broad)
-    url = await enrich_article_images(article_id, keywords)
+    url = await enrich_article_images(article_id, keywords, excluded_urls=excluded_urls)
     if url and await is_valid_image_url(url):
         logger.info("validate_and_fix: article %d fixed via Unsplash", article_id)
         return url
