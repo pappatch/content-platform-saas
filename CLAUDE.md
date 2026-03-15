@@ -532,45 +532,44 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Dark mode persistence fix | `frontend/src/context/ThemeContext.jsx` | ✅ Done |
-| `ApiUsageLog` ORM model | `app/models/api_usage_log.py`, `app/models/__init__.py` | ✅ Done |
-| Alembic migration `c3d4e5f6a7b8` | `alembic/versions/c3d4e5f6a7b8_add_api_usage_log_table.py` | ✅ Applied |
-| `usage_service.py` log helper | `app/services/usage_service.py` | ✅ Done |
-| `GET /admin/api-usage` route | `app/routes/admin/api_usage.py`, `main.py` | ✅ Done |
-| Service instrumentation (6 services) | `ai_review.py`, `image_service.py`, `scraper.py`, `logo_service.py`, `trends_service.py` | ✅ Done |
-| `ApiUsage.jsx` frontend dashboard | `frontend/src/apps/admin/ApiUsage.jsx`, `App.jsx`, `AdminLayout.jsx` | ✅ Done |
-| Admin nav reorganization | `frontend/src/apps/admin/AdminLayout.jsx` | ✅ Done |
-| CMS nav reorganization | `frontend/src/apps/cms/CmsLayout.jsx` | ✅ Done |
-| Review nav reorganization | `frontend/src/apps/review/ReviewLayout.jsx` | ✅ Done |
-| Editor's Pick toggle | `frontend/src/apps/cms/ArticleDetail.jsx` | ✅ Done |
-| Reusability refactor | `components/AiScoreBadge`, `StatusBadge`, `PinModal`, `utils/formatDate`, deleted `review/ConfirmDialog` | ✅ Done |
+| Dark mode persistence fix | `context/ThemeContext.jsx` — API default commits to localStorage; effect syncs DOM+storage; no flash on mount | ✅ Done |
+| `ApiUsageLog` ORM model + migration | `models/api_usage_log.py`, `models/__init__.py`, migration `c3d4e5f6a7b8` | ✅ Done |
+| `usage_service.py` | `services/usage_service.py` — `log_api_call()` fire-and-forget, never raises | ✅ Done |
+| `GET /admin/api-usage` route | `routes/admin/api_usage.py`, `main.py` — per-service cost + sparkline stats | ✅ Done |
+| API service instrumentation | `ai_review.py`, `image_service.py`, `scraper.py`, `logo_service.py`, `trends_service.py` — all 6 external services instrumented | ✅ Done |
+| `ApiUsage.jsx` dashboard | `apps/admin/ApiUsage.jsx`, `App.jsx`, `AdminLayout.jsx` — service cards, sparklines, cost totals | ✅ Done |
+| Nav reorganization (3 apps) | `AdminLayout.jsx`, `CmsLayout.jsx`, `ReviewLayout.jsx` — `NAV_SECTIONS` grouped structure, cross-app links inline | ✅ Done |
+| Editor's Pick toggle | `apps/cms/ArticleDetail.jsx` — inline PinModal, amber highlight when pinned, expiry display | ✅ Done |
+| Reusability refactor | `components/AiScoreBadge`, `StatusBadge`, `PinModal`, `utils/formatDate`; deleted `review/ConfirmDialog` duplicate | ✅ Done |
 | Working Rule 9 + `/refactor` command | `CLAUDE.md`, `.claude/commands/refactor.md` | ✅ Done |
-| Default Images Manager (backend) | `app/routes/sites/sites.py` — PATCH, POST /fill, DELETE /{index} | ✅ Done |
-| Default Images Manager (frontend) | `SiteModal.jsx`, `services/sites.js` — full 5-slot manager | ✅ Done |
-| `defaultImages.js` simplified | `site-renderer/src/utils/defaultImages.js` — removed Tier 2+3, returns null | ✅ Done |
-| `ArticleCard.jsx` null-image handling | `site-renderer/src/components/ArticleCard.jsx` — colour placeholder + admin Edit link | ✅ Done |
-| Hardcoded constants → PlatformSettings | `settings_service.py`, `scraper.py`, `ai_review.py`, `image_worker.py`, `review_worker.py`, `scrape_worker.py`, `image_service.py`, `images.py`, `trends_service.py`, `sites.py`, `Settings.jsx` | ✅ Done |
-| Working Rule #11 | `CLAUDE.md` | ✅ Done |
-| `GET /admin/docs/{filename}` route | `app/routes/admin/docs.py`, `main.py` | ✅ Done |
-| Architecture Guidelines tab | `Architecture.jsx` — GuidelinesTab, modal, stats bar 9→21, ArchTab keys 9→21 | ✅ Done |
+| Default Images Manager (backend) | `routes/sites/sites.py` — `PATCH /{id}/default-images`, `POST /{id}/default-images/fill`, `DELETE /{id}/default-images/{index}` | ✅ Done |
+| Default Images Manager (frontend) | `SiteModal.jsx`, `services/sites.js` — 5-slot grid, per-slot Replace/Set URL/Remove controls, Auto-fill + Refresh all | ✅ Done |
+| `defaultImages.js` simplified | `site-renderer/src/utils/defaultImages.js` — removed Tier 2 (keyword redirect) + Tier 3 (hardcoded fallbacks); returns `null` when no storedImages | ✅ Done |
+| `ArticleCard.jsx` null-image handling | `site-renderer/src/components/ArticleCard.jsx` — `--color-primary` colour placeholder; admin Edit overlay link | ✅ Done |
+| Hardcoded constants → PlatformSettings | `settings_service.py` (+12 new keys), `scraper.py`, `ai_review.py`, `image_worker.py`, `review_worker.py`, `scrape_worker.py`, `image_service.py`, `images.py`, `trends_service.py`, `sites.py`, `Settings.jsx` (5→6 groups) | ✅ Done |
+| `trends_auto_site_threshold` wired | `trends_service.py` `create_site_from_trend()` — threshold check before site limit; previously seeded but never read | ✅ Done |
+| Working Rule #11 | `CLAUDE.md` — configuration discipline: business-logic values → PlatformSettings; infrastructure constants stay as code | ✅ Done |
+| `GET /admin/docs/{filename}` | `routes/admin/docs.py`, `main.py` — serves CLAUDE.md or REVIEW.md; strict allowlist; admin only | ✅ Done |
+| Architecture Guidelines tab | `Architecture.jsx` — `GuidelinesTab` with 6 cards (CLAUDE.md+REVIEW.md viewable via modal, commands list, .env, config.py, PlatformSettings link); stats bar 9→21; ArchTab settings 9→21 keys; all 4 workers show "interval from PlatformSettings" | ✅ Done |
 
 ### Current known issues / state
 
-- **API Usage dashboard shows zeros** until new API calls are made post-migration. Trigger a scrape job or AI review to start populating `api_usage_log`. Historical calls before this session are not backfilled.
-- **Sites without default_images** set will show coloured placeholders for articles missing `main_image_url`. Open each site in the admin Site modal and click "✦ Auto-fill empty" to populate.
-- **Site 1 (Shih Tzu):** Article 13 ("סרגל נגישות אתר") is off-topic; may want to manually remove.
-- **Logo quality:** SDXL logos at 1536×640 are reasonable. Upgrading to DALL-E 3 would give proper 4:1 banner ratio.
-- **No rate limiting** on `/analytics/track`, `/auth/login`, `/auth/register` — acceptable for dev, required before production.
-- **No DOMPurify** on client-side `dangerouslySetInnerHTML` — acceptable for dev, required before production.
-- **5 sites** in DB: Shih Tzu (id=1, Hebrew RTL), Bonsai (id=2, English), White Noise Hub (id=3, English), Geometric small tattoo (id=4, English), Giulia Vecchio Central (id=5, English).
+- **API Usage dashboard shows zeros** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to start populating it. Pre-session history is not backfilled.
+- **Sites without `default_images`** will show coloured `--color-primary` placeholders for articles missing `main_image_url`. Open each site in admin Site modal → click "✦ Auto-fill empty" to populate all 5 slots.
+- **Site 1 (Shih Tzu) — Article 13** ("סרגל נגישות אתר" — accessibility bar) is off-topic content; scored high enough to auto-publish but unrelated to the site theme. Candidate for manual removal.
+- **Logo quality** — SDXL logos at 1536×640 are functional but not true banner-ratio (target is 800×200 / 4:1). Upgrade to DALL-E 3 when `OPENAI_API_KEY` is available.
+- **No rate limiting** on `/analytics/track`, `/auth/login`, `/auth/register` — fine for dev, required before production (REVIEW.md R1).
+- **No DOMPurify** on client-side `dangerouslySetInnerHTML` — fine for dev, required before production (REVIEW.md R2).
+- **5 sites in DB** — Shih Tzu (id=1, Hebrew RTL), Bonsai (id=2, English LTR), White Noise Hub (id=3, English), Geometric Tattoo (id=4, English), Giulia Vecchio Central (id=5, English).
+- **PlatformSettings count** — 21 seeded keys; Settings UI shows 6 groups; stats bar and Architecture tab now reflect 21.
 
 ### Exact next steps to continue from
 
-1. Open each site in the admin Site modal → Default Images → "✦ Auto-fill empty" to ensure all 5 sites have curated default images
-2. Run a scrape job to populate `api_usage_log` and verify the API Costs dashboard shows live data
-3. Architecture → Guidelines tab → View CLAUDE.md and REVIEW.md to confirm the docs route works correctly
-4. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
-4. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
-5. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
-6. Run `alembic revision --autogenerate -m "add db indexes"` and add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
-7. Before production: add slowapi rate limiting, DOMPurify, set `VITE_API_URL` in `frontend/.env.production`, update CORS origins in `main.py`
+1. Open each site in admin Site modal → Default Images section → "✦ Auto-fill empty" to populate all 5 curated image slots per site
+2. Run a scrape job → confirm API Costs dashboard shows live Tavily + Anthropic call data
+3. Architecture → Guidelines tab → click "View →" on CLAUDE.md and REVIEW.md to confirm `GET /admin/docs/{filename}` works end-to-end
+4. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + checkbox UI in `Articles.jsx` (checkboxes partially exist)
+5. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
+6. **Logo upgrade** — swap `logo_service.py` to DALL-E 3 (`dall-e-3`) if `OPENAI_API_KEY` is provided; supports arbitrary sizes so true 800×200 becomes possible
+7. **Social media trends** — add Twitter/X or Reddit as additional trend sources alongside Google Trends RSS
+8. **Production hardening** — slowapi rate limiting on auth + analytics routes; DOMPurify on `dangerouslySetInnerHTML`; `VITE_API_URL` in `frontend/.env.production`; update CORS origins in `main.py`
