@@ -2,10 +2,26 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useDirection } from '../../hooks/useDirection'
 
-const NAV_ITEMS = [
-  { to: '/review', label: 'Queue', end: true },
-  { to: '/review/history', label: 'History' },
+const NAV_SECTIONS = [
+  {
+    label: 'Review',
+    items: [
+      { to: '/review', label: 'Pending Queue ✅', end: true },
+      { to: '/cms/articles?status=published', label: 'Published 📰', external: true },
+      { to: '/cms/articles?status=removed', label: 'Removed 🗑️', external: true },
+    ],
+  },
 ]
+
+const navLinkClass = ({ isActive }) =>
+  `block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+    isActive
+      ? 'bg-amber-700 text-white'
+      : 'text-amber-200 hover:bg-amber-800 hover:text-white'
+  }`
+
+const externalLinkClass =
+  'block px-3 py-2 rounded-lg text-sm font-medium transition-colors text-amber-200 hover:bg-amber-800 hover:text-white'
 
 export default function ReviewLayout() {
   const { user, logout } = useAuth()
@@ -23,22 +39,26 @@ export default function ReviewLayout() {
         <div className="px-4 py-5 text-lg font-bold tracking-wide border-b border-amber-700">
           Review
         </div>
-        <nav className="flex-1 px-2 py-4 space-y-1">
-          {NAV_ITEMS.map(({ to, label, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-amber-700 text-white'
-                    : 'text-amber-200 hover:bg-amber-800 hover:text-white'
-                }`
-              }
-            >
-              {label}
-            </NavLink>
+        <nav className="flex-1 px-2 py-4 space-y-4">
+          {NAV_SECTIONS.map(({ label, items }) => (
+            <div key={label}>
+              <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-amber-500">
+                {label}
+              </p>
+              <div className="space-y-0.5">
+                {items.map(({ to, label: itemLabel, end, external }) =>
+                  external ? (
+                    <Link key={to + itemLabel} to={to} className={externalLinkClass}>
+                      {itemLabel}
+                    </Link>
+                  ) : (
+                    <NavLink key={to + itemLabel} to={to} end={end} className={navLinkClass}>
+                      {itemLabel}
+                    </NavLink>
+                  )
+                )}
+              </div>
+            </div>
           ))}
         </nav>
         <div className="px-4 py-3 border-t border-amber-700 space-y-1">

@@ -415,6 +415,10 @@ GET        /analytics
 - **End-of-session audit** (2026-03-14): full security + code review; Architecture.jsx updated with Stability AI, logo_service, image_validator, image_worker (Workers stat 3→4), /admin/images/audit route, sticky header + hero height notes in site renderer; REVIEW.md appended with new session findings
 - **Dark mode persistence fix** (2026-03-15): `ThemeContext.jsx` — API-set default now commits to localStorage; `useEffect` watching `isDark` always syncs both DOM class and localStorage; `applyThemeClass()` called synchronously in state initializer to prevent flash; `toggleTheme` simplified
 - **API Usage & Costs dashboard** (2026-03-15): `ApiUsageLog` ORM model + Alembic migration `c3d4e5f6a7b8`; `services/usage_service.py` `log_api_call()` sync helper (fire-and-forget, never raises); `GET /admin/api-usage` route aggregates per-service stats + cost estimates + 7-day sparklines; `ApiUsage.jsx` frontend with service cards, status badges, recharts sparklines, summary cost bar; services instrumented: Anthropic (token counts in meta), Unsplash, Tavily, Google CSE, Google Trends, Stability AI; nav item "API Costs 💰" added to AdminLayout
+- **Admin nav reorganization** (2026-03-15): `AdminLayout.jsx` sidebar refactored from flat `NAV_ITEMS` to `NAV_SECTIONS` grouped array with 4 sections — PLATFORM (Dashboard, API Costs), CONTENT PIPELINE (Trends, Sites, Scrape Jobs, Articles ✍️→/cms/articles, Review Queue ✅→/review), PUBLISHING (Categories 🏷️→/cms/categories, Pin Management→/admin/sites), SYSTEM (Users, Architecture, Settings); cross-app links use plain `Link` (not NavLink); uppercase gray section headers rendered as dividers; old "Switch to CMS/Review" footer links removed (cross-app access now inline in nav)
+- **CMS nav reorganization** (2026-03-15): `CmsLayout.jsx` sidebar refactored to `NAV_SECTIONS` with 2 sections — CONTENT (Articles ✍️, Categories 🏷️), TOOLS (Pin Management 📌→/cms/articles, Review Queue ✅→/review external); same pattern as AdminLayout
+- **Review nav reorganization** (2026-03-15): `ReviewLayout.jsx` sidebar refactored to `NAV_SECTIONS` with REVIEW section — Pending Queue ✅ (NavLink /review), Published 📰 (→/cms/articles?status=published external), Removed 🗑️ (→/cms/articles?status=removed external)
+- **Editor's Pick toggle in ArticleDetail** (2026-03-15): `ArticleDetail.jsx` — replaced raw "Pin" checkbox card with "Editor's Pick" sidebar card; `PinModal` component inlined (same duration picker as in Articles.jsx); when not pinned: "⭐ Set as Editor's Pick" indigo button; when pinned: amber highlight card showing "📌 Featured" + expiry date + "Unpin" button; `pinUntilMut` sends `PATCH` with both `is_pinned` and `pinned_until`; modal closes on success via `onSuccess` callback
 
 ### 🔲 Next Steps (priority order)
 
@@ -516,6 +520,10 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | `GET /admin/api-usage` route | `app/routes/admin/api_usage.py`, `main.py` | ✅ Done |
 | Service instrumentation (6 services) | `ai_review.py`, `image_service.py`, `scraper.py`, `logo_service.py`, `trends_service.py` | ✅ Done |
 | `ApiUsage.jsx` frontend dashboard | `frontend/src/apps/admin/ApiUsage.jsx`, `App.jsx`, `AdminLayout.jsx` | ✅ Done |
+| Admin nav reorganization | `frontend/src/apps/admin/AdminLayout.jsx` | ✅ Done |
+| CMS nav reorganization | `frontend/src/apps/cms/CmsLayout.jsx` | ✅ Done |
+| Review nav reorganization | `frontend/src/apps/review/ReviewLayout.jsx` | ✅ Done |
+| Editor's Pick toggle | `frontend/src/apps/cms/ArticleDetail.jsx` | ✅ Done |
 
 ### Current known issues / state
 
@@ -529,8 +537,9 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 ### Exact next steps to continue from
 
 1. Run a scrape job to populate `api_usage_log` and verify the API Costs dashboard shows live data
-2. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
-3. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
-4. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
-5. Run `alembic revision --autogenerate -m "add db indexes"` and add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
-6. Before production: add slowapi rate limiting, DOMPurify, set `VITE_API_URL` in `frontend/.env.production`, update CORS origins in `main.py`
+2. Add Analytics page at `/admin/analytics` (currently Dashboard at `/admin` doubles as analytics — consider splitting into dedicated route, or add "Analytics 📊" nav link)
+3. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
+4. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
+5. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
+6. Run `alembic revision --autogenerate -m "add db indexes"` and add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
+7. Before production: add slowapi rate limiting, DOMPurify, set `VITE_API_URL` in `frontend/.env.production`, update CORS origins in `main.py`

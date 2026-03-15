@@ -3,17 +3,49 @@ import { useAuth } from '../../hooks/useAuth'
 import { useDirection } from '../../hooks/useDirection'
 import { useTheme } from '../../context/ThemeContext'
 
-const NAV_ITEMS = [
-  { to: '/admin', label: 'Dashboard', end: true },
-  { to: '/admin/sites', label: 'Sites' },
-  { to: '/admin/scrape-jobs', label: 'Scrape Jobs' },
-  { to: '/admin/trends', label: 'Trends' },
-  { to: '/admin/users', label: 'Users' },
-  { to: '/admin/analytics', label: 'Analytics' },
-  { to: '/admin/architecture', label: 'Architecture' },
-  { to: '/admin/settings', label: 'Settings ⚙️' },
-  { to: '/admin/api-usage', label: 'API Costs 💰' },
+const NAV_SECTIONS = [
+  {
+    label: 'Platform',
+    items: [
+      { to: '/admin', label: 'Dashboard', end: true },
+      { to: '/admin/api-usage', label: 'API Costs 💰' },
+    ],
+  },
+  {
+    label: 'Content Pipeline',
+    items: [
+      { to: '/admin/trends', label: 'Trends 🔥' },
+      { to: '/admin/sites', label: 'Sites 🌐' },
+      { to: '/admin/scrape-jobs', label: 'Scrape Jobs 🔍' },
+      { to: '/cms/articles', label: 'Articles ✍️', external: true },
+      { to: '/review', label: 'Review Queue ✅', external: true },
+    ],
+  },
+  {
+    label: 'Publishing',
+    items: [
+      { to: '/cms/categories', label: 'Categories 🏷️', external: true },
+      { to: '/admin/sites', label: 'Pin Management 📌' },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { to: '/admin/users', label: 'Users 👥' },
+      { to: '/admin/architecture', label: 'Architecture 🏗️' },
+      { to: '/admin/settings', label: 'Settings ⚙️' },
+    ],
+  },
 ]
+
+const navLinkClass = ({ isActive }) =>
+  `block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+    isActive
+      ? 'bg-indigo-700 text-white'
+      : 'text-indigo-200 hover:bg-indigo-800 hover:text-white'
+  }`
+
+const externalLinkClass = 'block px-3 py-2 rounded-lg text-sm font-medium transition-colors text-indigo-200 hover:bg-indigo-800 hover:text-white'
 
 export default function AdminLayout() {
   const { user, logout } = useAuth()
@@ -33,29 +65,28 @@ export default function AdminLayout() {
         <div className="px-4 py-5 text-lg font-bold tracking-wide border-b border-indigo-700">
           Admin
         </div>
-        <nav className="flex-1 px-2 py-4 space-y-1">
-          {NAV_ITEMS.map(({ to, label, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `block px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-indigo-700 text-white'
-                    : 'text-indigo-200 hover:bg-indigo-800 hover:text-white'
-                }`
-              }
-            >
-              {label}
-            </NavLink>
+        <nav className="flex-1 px-2 py-4 space-y-4">
+          {NAV_SECTIONS.map(({ label, items }) => (
+            <div key={label}>
+              <p className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest text-indigo-500">
+                {label}
+              </p>
+              <div className="space-y-0.5">
+                {items.map(({ to, label: itemLabel, end, external }) =>
+                  external ? (
+                    <Link key={to + itemLabel} to={to} className={externalLinkClass}>
+                      {itemLabel}
+                    </Link>
+                  ) : (
+                    <NavLink key={to + itemLabel} to={to} end={end} className={navLinkClass}>
+                      {itemLabel}
+                    </NavLink>
+                  )
+                )}
+              </div>
+            </div>
           ))}
         </nav>
-        <div className="px-4 py-3 border-t border-indigo-700 space-y-1">
-          <p className="text-xs text-indigo-500 uppercase tracking-wider mb-1">Switch to</p>
-          <Link to="/cms" className="block text-xs text-indigo-300 hover:text-white py-0.5">CMS →</Link>
-          <Link to="/review" className="block text-xs text-indigo-300 hover:text-white py-0.5">Review →</Link>
-        </div>
         <div className="px-4 py-4 border-t border-indigo-700 space-y-2">
           <button
             onClick={toggleTheme}

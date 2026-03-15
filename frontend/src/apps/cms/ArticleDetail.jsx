@@ -7,6 +7,70 @@ import Image from '@tiptap/extension-image'
 import { getArticle, updateArticle } from '../../services/articles'
 import { getSites } from '../../services/sites'
 
+// ─── Pin Duration Modal ───────────────────────────────────────────────────────
+
+const PIN_DURATIONS = [
+  { label: '1 day',   ms: 86_400_000 },
+  { label: '1 week',  ms: 7 * 86_400_000 },
+  { label: '1 month', ms: 30 * 86_400_000 },
+]
+
+function PinModal({ article, loading, onPin, onCancel }) {
+  const isCurrentlyPinned =
+    article.is_pinned || (article.pinned_until && new Date(article.pinned_until) > new Date())
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+        <h3 className="text-base font-semibold text-gray-900 mb-1">
+          {isCurrentlyPinned ? 'Unpin article?' : '⭐ Editor\'s Pick'}
+        </h3>
+        <p className="text-sm text-gray-500 mb-5 line-clamp-2">{article.title}</p>
+
+        {isCurrentlyPinned ? (
+          <>
+            <p className="text-sm text-gray-600 mb-4">
+              This article is currently featured. Remove the Editor's Pick?
+            </p>
+            <div className="flex justify-end gap-2">
+              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
+              <button
+                onClick={() => onPin(0)}
+                disabled={loading}
+                className="px-4 py-2 text-sm rounded-lg bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-50"
+              >
+                {loading ? 'Saving…' : 'Unpin'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-600 mb-3">Choose how long to feature this article at the top:</p>
+            <div className="flex flex-col gap-2 mb-5">
+              {PIN_DURATIONS.map(({ label, ms }) => (
+                <button
+                  key={ms}
+                  onClick={() => onPin(ms)}
+                  disabled={loading}
+                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 text-sm font-medium text-gray-800 transition-colors disabled:opacity-50"
+                >
+                  {label}
+                  <span className="float-right text-gray-400 font-normal">
+                    until {new Date(Date.now() + ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-end">
+              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -261,6 +325,7 @@ function EditableField({ label, value, onSave, multiline = false, className = ''
 export default function ArticleDetail() {
   const { id } = useParams()
   const queryClient = useQueryClient()
+  const [pinModalOpen, setPinModalOpen] = useState(false)
 
   const { data: article, isLoading, error } = useQuery({
     queryKey: ['article', id],
@@ -276,6 +341,23 @@ export default function ArticleDetail() {
     mutationFn: (data) => updateArticle(id, data),
     onSuccess: (updated) => queryClient.setQueryData(['article', id], updated),
   })
+
+  const pinUntilMut = useMutation({
+    mutationFn: (data) => updateArticle(id, data),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(['article', id], updated)
+      setPinModalOpen(false)
+    },
+  })
+
+  function handlePin(durationMs) {
+    if (durationMs === 0) {
+      pinUntilMut.mutate({ is_pinned: false, pinned_until: null })
+    } else {
+      const until = new Date(Date.now() + durationMs).toISOString()
+      pinUntilMut.mutate({ is_pinned: true, pinned_until: until })
+    }
+  }
 
   if (isLoading) {
     return <div className="p-8 text-center text-gray-500">Loading article…</div>
@@ -420,34 +502,40 @@ export default function ArticleDetail() {
             />
           </div>
 
-          {/* Pin */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
-            <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Pin</p>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={article.is_pinned}
-                onChange={(e) => updateMutation.mutate({ is_pinned: e.target.checked })}
-                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span className="text-sm text-gray-700">Pinned to top</span>
-            </label>
-            {article.is_pinned && (
-              <div className="space-y-1">
-                <label className="text-xs text-gray-500">Pin order</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={article.pin_order ?? ''}
-                  onChange={(e) =>
-                    updateMutation.mutate({ pin_order: e.target.value ? Number(e.target.value) : null })
-                  }
-                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  placeholder="0"
-                />
+          {/* Editor's Pick */}
+          {(() => {
+            const isPinned = article.is_pinned || (article.pinned_until && new Date(article.pinned_until) > new Date())
+            return (
+              <div className={`rounded-xl border-2 p-4 space-y-2 transition-colors ${isPinned ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-200'}`}>
+                <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Editor's Pick</p>
+                {isPinned ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-amber-700">📌 Featured</span>
+                    </div>
+                    {article.pinned_until && new Date(article.pinned_until) > new Date() && (
+                      <p className="text-xs text-amber-600">
+                        Until {new Date(article.pinned_until).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </p>
+                    )}
+                    <button
+                      onClick={() => setPinModalOpen(true)}
+                      className="w-full px-3 py-1.5 text-xs rounded-lg border border-amber-300 text-amber-700 hover:bg-amber-100 font-medium transition-colors"
+                    >
+                      Unpin
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setPinModalOpen(true)}
+                    className="w-full px-3 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-medium transition-colors"
+                  >
+                    ⭐ Set as Editor's Pick
+                  </button>
+                )}
               </div>
-            )}
-          </div>
+            )
+          })()}
 
           {/* Source */}
           {article.source_url && (
@@ -478,6 +566,15 @@ export default function ArticleDetail() {
           </div>
         </div>
       </div>
+
+      {pinModalOpen && (
+        <PinModal
+          article={article}
+          loading={pinUntilMut.isPending}
+          onPin={handlePin}
+          onCancel={() => setPinModalOpen(false)}
+        />
+      )}
     </div>
   )
 }
