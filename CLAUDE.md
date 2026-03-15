@@ -35,7 +35,14 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 ## Working Rules
 
 1. **Always read CLAUDE.md before starting any task.**
-2. **Always update CLAUDE.md at the end of every session** — mark completed items, update Next Steps, reflect architectural changes.
+2. **After every task, mandatory updates to ALL of the following:**
+   - **(1) CLAUDE.md** — mark completed items in the Completed section; update the Architecture section if structure changed; update the API Reference if routes were added/modified; update the Data Model if ORM models changed; update Next Steps to reflect remaining work.
+   - **(2) REVIEW.md** — append any new code findings, security observations, or technical debt identified during the task (even if minor). Never skip this even for small tasks.
+   - **(3) Architecture.jsx** — reflect any new services, routes, models, or frontend components in both the Flow tab and the Architecture tab. Update stat counters and layer descriptions.
+   - **(4) `.claude/commands/`** — update relevant slash commands if new features, routes, or models affect their queries or descriptions.
+   - **(5) Code review** — before finishing any task, scan every changed file for: unused imports, missing error handling, hardcoded values, and security issues (unprotected routes, exposed keys, missing input validation). Fix any critical issues found before committing.
+   - **(6) Security review** — verify every new backend route has the correct auth decorator (`get_current_user` / `require_admin` / `require_editor`); every new external API call has `try/except` and loads keys from `settings`; no sensitive data (keys, tokens, PII) appears in logs or responses.
+   - **This rule applies to every single task without exception and cannot be skipped.**
 3. **When adding env vars**, update both `config.py` and `.env`.
 4. **Keep services modular** — each service file has a single responsibility.
 5. **All errors must be caught and logged** — never crash background workers.

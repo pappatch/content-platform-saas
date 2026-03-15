@@ -447,3 +447,52 @@ The table grows indefinitely (one row per external API call). At scale (thousand
 **Rating: GOOD with well-understood gaps**
 
 The API Usage dashboard adds useful cost visibility without introducing new attack surface. All routes remain admin-only. The instrumentation is purely additive and does not change any service behaviour. Outstanding production blockers unchanged (R1, R2, R3).
+
+---
+
+## Session 4 — 2026-03-15
+
+### Changes Reviewed
+
+**Nav reorganization** — `AdminLayout.jsx`, `CmsLayout.jsx`, `ReviewLayout.jsx`; **Editor's Pick** — `ArticleDetail.jsx`; **Reusability refactor** — `components/AiScoreBadge`, `StatusBadge`, `PinModal`, `utils/formatDate`, deleted `review/ConfirmDialog.jsx`; **Working Rule 9 + `/refactor` command**.
+
+### Security Findings
+
+**Nav reorganization — SAFE**
+- Pure presentational change; cross-app `Link` components navigate client-side with no auth bypass. ✅
+- External links (`/cms/articles`, `/review`, `/cms/categories`) still protected by their respective `ProtectedRoute` wrappers. ✅
+
+**`ArticleDetail.jsx` Editor's Pick — SAFE**
+- `pinUntilMut` calls `updateArticle(id, data)` → `PATCH /cms/articles/{id}` which is behind `require_editor`. ✅
+- `pinned_until` is computed from `Date.now() + durationMs` — client-supplied only to CMS editors (authenticated); no server-side risk beyond normal article mutation. ✅
+- No new input fields exposed to unauthenticated users. ✅
+
+**Reusability refactor — SAFE**
+- All extracted components (`AiScoreBadge`, `StatusBadge`, `PinModal`, `formatDate`) are pure presentational / utility — no auth, no API calls, no external data. ✅
+- `review/ConfirmDialog.jsx` deletion: `review/Dashboard.jsx` now imports `components/ConfirmDialog`. The shared component has a `danger` prop (defaults `true`) which preserves the red confirm button for the reject action. Behaviour is unchanged. ✅
+- `components/ConfirmDialog` z-index raised from z-50 to z-[60]: correct — the component must render above `ArticlePreviewModal` (z-50 via `components/Modal`). No other z-index conflicts identified. ✅
+
+### Code Quality Observations
+
+**Q1 — `AiScoreBadge` midThreshold inconsistency (now resolved)**
+Four files had `AiScoreBadge` with two different mid-thresholds (0.4 in CMS, 0.5 in Review). Consolidated into single component with `midThreshold` prop defaulting to 0.5 (auto-publish threshold per Rule 6). CMS callers use default. Review callers also use default. This aligns visual scoring with the platform's actual threshold.
+
+**Q2 — `formatDate` signature divergence (now resolved)**
+Four independent `formatDate` functions had subtly different behaviour: one had no null-check, one returned `null` on empty, two returned `'—'`. Unified utility always returns `'—'` for falsy input, wraps in try/catch, accepts `{ showTime, showYear }` options. All call sites updated.
+
+**Q3 — Duplicate `ConfirmDialog` implementations (now resolved)**
+`apps/review/ConfirmDialog.jsx` was a slightly downgraded copy of `components/ConfirmDialog.jsx` (missing `danger` prop, hardcoded red, wrong z-index). Deleted the duplicate. The shared component is now the single source of truth.
+
+### New Recommendations
+
+**R17 — `ArticleDetail` pin card IIFE pattern**
+The Editor's Pick sidebar card uses an IIFE (`{(() => { ... })()}`) to derive `isPinned`. This is functional but harder to scan than extracting a `const isPinned = ...` above the JSX. Low priority, no bug risk.
+
+**R18 — Working Rule 2 enforcement**
+The new comprehensive Rule 2 mandates REVIEW.md, Architecture.jsx, and slash command updates after every task. Consider adding a pre-commit hook or Claude hook that checks for a REVIEW.md diff when any `.jsx` or `.py` file changes, to ensure the rule is mechanically enforced rather than relying on memory.
+
+### Updated Overall Assessment
+
+**Rating: GOOD with well-understood gaps**
+
+The refactor reduces duplication risk — previously, a bug fix to `AiScoreBadge` needed to be applied to 4 files; now it is applied once. The reusability rule (Working Rule 9) and `/refactor` command institutionalise this going forward. Outstanding production blockers unchanged (R1, R2, R3).
