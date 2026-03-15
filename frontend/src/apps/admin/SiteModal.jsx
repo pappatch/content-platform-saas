@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { createSite, updateSite, previewSiteConfig, enrichSite, getSiteDefaultImages } from '../../services/sites'
+import {
+  createSite, updateSite, previewSiteConfig, enrichSite,
+  getSiteDefaultImages, patchDefaultImages, fillDefaultImages, deleteDefaultImage,
+} from '../../services/sites'
 import Modal from '../../components/Modal'
 
 const LANGUAGES = [
@@ -140,6 +143,9 @@ export default function SiteModal({ site, onClose }) {
   const [enrichLoading, setEnrichLoading] = useState(false)
   const [defaultImages, setDefaultImages] = useState([])
   const [imagesLoading, setImagesLoading] = useState(false)
+  const [slotLoading, setSlotLoading] = useState(new Set())
+  const [urlInputIndex, setUrlInputIndex] = useState(null)
+  const [urlInputValue, setUrlInputValue] = useState('')
 
   useEffect(() => {
     if (site) {
@@ -246,41 +252,77 @@ export default function SiteModal({ site, onClose }) {
     }
   }
 
-  // --- Fetch / refresh default images from Unsplash ---
-  async function handleFetchDefaultImages() {
+  // --- Refresh all 5 images from Unsplash ---
+  async function handleRefreshAll() {
     if (!site) return
     setImagesLoading(true)
     try {
       const result = await getSiteDefaultImages(site.id)
       setDefaultImages(result.images || [])
-      setForm((f) => ({
-        ...f,
-        config: { ...f.config, default_images: result.images },
-      }))
     } catch {
-      // silently fail — images are optional
+      // silently fail
     } finally {
       setImagesLoading(false)
     }
   }
 
-  // --- Replace a single image slot ---
-  async function handleReplaceImage(slotIndex) {
+  // --- Auto-fill empty slots ---
+  async function handleAutoFillAll() {
     if (!site) return
     setImagesLoading(true)
     try {
-      // Fetch a fresh batch and pick the slot (server returns random set each time)
-      const result = await getSiteDefaultImages(site.id)
-      const freshImages = result.images || []
-      if (freshImages[slotIndex]) {
-        const next = [...defaultImages]
-        next[slotIndex] = freshImages[slotIndex]
-        setDefaultImages(next)
-        setForm((f) => ({
-          ...f,
-          config: { ...f.config, default_images: next },
-        }))
-      }
+      const result = await fillDefaultImages(site.id)
+      setDefaultImages(result.images || [])
+    } catch {
+      // silently fail
+    } finally {
+      setImagesLoading(false)
+    }
+  }
+
+  // --- Replace one slot with a new Unsplash image ---
+  async function handleReplaceWithUnsplash(slotIndex) {
+    if (!site) return
+    setSlotLoading((prev) => new Set(prev).add(slotIndex))
+    try {
+      const result = await deleteDefaultImage(site.id, slotIndex, true)
+      setDefaultImages(result.images || [])
+    } catch {
+      // silently fail
+    } finally {
+      setSlotLoading((prev) => { const s = new Set(prev); s.delete(slotIndex); return s })
+    }
+  }
+
+  // --- Remove one slot (no auto-fill) ---
+  async function handleRemoveSlot(slotIndex) {
+    if (!site) return
+    setSlotLoading((prev) => new Set(prev).add(slotIndex))
+    try {
+      const result = await deleteDefaultImage(site.id, slotIndex, false)
+      setDefaultImages(result.images || [])
+    } catch {
+      // silently fail
+    } finally {
+      setSlotLoading((prev) => { const s = new Set(prev); s.delete(slotIndex); return s })
+    }
+  }
+
+  // --- Set a custom URL for a slot ---
+  async function handleSetUrl(slotIndex) {
+    const url = urlInputValue.trim()
+    setUrlInputIndex(null)
+    setUrlInputValue('')
+    if (!site || !url) return
+    const next = [...defaultImages]
+    // Expand to cover this slot index if needed
+    while (next.length <= slotIndex) next.push(null)
+    next[slotIndex] = url
+    const clean = next.filter(Boolean).slice(0, 5)
+    setImagesLoading(true)
+    try {
+      const result = await patchDefaultImages(site.id, clean)
+      setDefaultImages(result.images || [])
     } catch {
       // silently fail
     } finally {
@@ -488,41 +530,121 @@ export default function SiteModal({ site, onClose }) {
           <section>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Default Images</h3>
-              <button
-                type="button"
-                onClick={handleFetchDefaultImages}
-                disabled={imagesLoading}
-                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50"
-              >
-                {imagesLoading ? 'Loading…' : defaultImages.length ? '↻ Refresh all' : '✦ Fetch images'}
-              </button>
-            </div>
-            {defaultImages.length > 0 ? (
-              <div className="grid grid-cols-5 gap-2">
-                {defaultImages.map((url, i) => (
-                  <div key={i} className="relative group rounded-lg overflow-hidden border border-gray-200 aspect-video bg-gray-100">
-                    <img
-                      src={url}
-                      alt={`Default image ${i + 1}`}
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.target.style.display = 'none' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleReplaceImage(i)}
-                      disabled={imagesLoading}
-                      className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-semibold"
-                    >
-                      Replace
-                    </button>
-                  </div>
-                ))}
+              <div className="flex items-center gap-3">
+                {defaultImages.length < 5 && (
+                  <button
+                    type="button"
+                    onClick={handleAutoFillAll}
+                    disabled={imagesLoading}
+                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-40"
+                  >
+                    {imagesLoading ? 'Loading…' : '✦ Auto-fill empty'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleRefreshAll}
+                  disabled={imagesLoading}
+                  className="text-xs text-gray-500 hover:text-gray-700 font-medium disabled:opacity-40"
+                >
+                  {imagesLoading ? 'Loading…' : '↻ Refresh all'}
+                </button>
               </div>
-            ) : (
-              <p className="text-xs text-gray-400 text-center py-4 border border-dashed border-gray-200 rounded-lg">
-                No default images set. Click "Fetch images" to generate 5 curated photos.
-              </p>
-            )}
+            </div>
+
+            <div className="grid grid-cols-5 gap-2">
+              {Array.from({ length: 5 }, (_, i) => {
+                const url = defaultImages[i]
+                const isSlotBusy = slotLoading.has(i)
+                const showInput = urlInputIndex === i
+                return (
+                  <div key={i} className="flex flex-col gap-1">
+                    <div className="relative group rounded-lg overflow-hidden border border-gray-200 aspect-video bg-gray-100">
+                      {isSlotBusy ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                          <span className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin inline-block" />
+                        </div>
+                      ) : url ? (
+                        <>
+                          <img
+                            src={url}
+                            alt={`Slot ${i + 1}`}
+                            className="w-full h-full object-cover"
+                            onError={(e) => { e.target.style.display = 'none' }}
+                          />
+                          <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleReplaceWithUnsplash(i)}
+                              title="Replace with Unsplash"
+                              className="text-white text-[10px] bg-indigo-600 hover:bg-indigo-700 px-1.5 py-0.5 rounded"
+                            >↺</button>
+                            <button
+                              type="button"
+                              onClick={() => { setUrlInputIndex(i); setUrlInputValue(url) }}
+                              title="Set custom URL"
+                              className="text-white text-[10px] bg-gray-600 hover:bg-gray-500 px-1.5 py-0.5 rounded"
+                            >✎</button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSlot(i)}
+                              title="Remove"
+                              className="text-white text-[10px] bg-red-600 hover:bg-red-700 px-1.5 py-0.5 rounded"
+                            >×</button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                          <span className="text-gray-400 text-xl leading-none">+</span>
+                          <button
+                            type="button"
+                            onClick={handleAutoFillAll}
+                            disabled={imagesLoading}
+                            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-40"
+                          >Auto-fill</button>
+                          <button
+                            type="button"
+                            onClick={() => { setUrlInputIndex(i); setUrlInputValue('') }}
+                            className="text-[10px] text-gray-500 hover:text-gray-700 font-medium"
+                          >Enter URL</button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Per-slot URL input */}
+                    {showInput && (
+                      <div className="flex gap-1">
+                        <input
+                          type="url"
+                          value={urlInputValue}
+                          onChange={(e) => setUrlInputValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); handleSetUrl(i) }
+                            if (e.key === 'Escape') setUrlInputIndex(null)
+                          }}
+                          placeholder="https://…"
+                          autoFocus
+                          className="flex-1 min-w-0 text-[10px] border border-indigo-300 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSetUrl(i)}
+                          className="shrink-0 text-[10px] text-white bg-indigo-600 hover:bg-indigo-700 rounded px-1.5 py-1"
+                        >Set</button>
+                        <button
+                          type="button"
+                          onClick={() => setUrlInputIndex(null)}
+                          className="shrink-0 text-[10px] text-gray-500 hover:text-gray-700 px-1 py-1"
+                        >✕</button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+            <p className="mt-2 text-xs text-gray-400">
+              Fallback photos for articles without images. Hover a slot to replace, edit, or remove.
+            </p>
           </section>
         )}
 

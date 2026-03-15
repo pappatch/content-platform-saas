@@ -20,6 +20,18 @@ export const enrichSite = (id) => api.post(`/sites/${id}/ai-enrich`).then((r) =>
 export const getSiteDefaultImages = (id) =>
   api.get(`/sites/${id}/default-images`).then((r) => r.data)
 
+/** Save a curated list of up to 5 image URLs (replaces the whole list). */
+export const patchDefaultImages = (id, images) =>
+  api.patch(`/sites/${id}/default-images`, { images }).then((r) => r.data)
+
+/** Fill empty slots in site.config.default_images via Unsplash. */
+export const fillDefaultImages = (id) =>
+  api.post(`/sites/${id}/default-images/fill`).then((r) => r.data)
+
+/** Remove image at index. Pass autoFill=false to skip Unsplash replacement. */
+export const deleteDefaultImage = (id, index, autoFill = true) =>
+  api.delete(`/sites/${id}/default-images/${index}`, { params: { auto_fill: autoFill } }).then((r) => r.data)
+
 /** Run the image audit on all published articles. */
 export const auditImages = (fix = true, limit = 200) =>
   api.post('/admin/images/audit', null, { params: { fix, limit } }).then((r) => r.data)

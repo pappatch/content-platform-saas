@@ -8,6 +8,9 @@ POST             /sites                   — create a site (admin only); AI-enr
 POST             /sites/ai-preview        — AI-generated config preview for a site name (admin only)
 POST             /sites/{id}/ai-enrich    — fill missing tagline/about/categories via Claude (admin only)
 GET              /sites/{id}/default-images — fetch + persist 5 Unsplash images for site's keywords (admin only)
+PATCH            /sites/{id}/default-images — save a curated list of up to 5 URLs (admin only)
+POST             /sites/{id}/default-images/fill — fill empty slots via Unsplash (admin only)
+DELETE           /sites/{id}/default-images/{index} — remove one slot, auto-fill replacement (admin only)
 PATCH            /sites/{id}              — update a site (admin only)
 DELETE           /sites/{id}              — soft-delete: set is_active=False (admin only)
 """
@@ -460,6 +463,163 @@ async def get_site_default_images(
     db.refresh(site)
 
     logger.info("get_site_default_images: generated %d validated images for site %d", len(images), site_id)
+    return {"site_id": site_id, "images": images}
+
+
+# ---------------------------------------------------------------------------
+# PATCH default images — save a user-curated list of up to 5 URLs
+# ---------------------------------------------------------------------------
+
+class DefaultImagesUpdate(BaseModel):
+    images: list[str]
+
+
+@router.patch("/{site_id}/default-images")
+async def patch_site_default_images(
+    site_id: int,
+    body: DefaultImagesUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Save up to 5 default image URLs for a site (replaces the whole list)."""
+    if len(body.images) > 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum 5 images allowed")
+
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
+
+    config = dict(site.config or {})
+    config["default_images"] = [u for u in body.images if u][:5]
+    site.config = config
+    db.commit()
+    db.refresh(site)
+
+    logger.info("patch_site_default_images: saved %d images for site %d", len(config["default_images"]), site_id)
+    return {"site_id": site_id, "images": config["default_images"]}
+
+
+# ---------------------------------------------------------------------------
+# POST default-images/fill — auto-fill empty slots via Unsplash
+# (registered before DELETE /{index} to avoid path-param conflict)
+# ---------------------------------------------------------------------------
+
+@router.post("/{site_id}/default-images/fill")
+async def fill_site_default_images(
+    site_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Fill None/missing slots in site.config.default_images up to 5 total."""
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
+
+    config = dict(site.config or {})
+    current: list[Optional[str]] = list(config.get("default_images") or [])
+    while len(current) < 5:
+        current.append(None)
+
+    # Build keyword list from scrape jobs + site name
+    seen: set[str] = set()
+    keywords: list[str] = []
+    if site.name:
+        n = site.name.lower().strip()
+        keywords.append(n); seen.add(n)
+    for job in db.query(ScrapeJob).filter(ScrapeJob.site_id == site_id).all():
+        for kw in (job.keywords or []):
+            kn = kw.lower().strip()
+            if kn and kn not in seen:
+                seen.add(kn); keywords.append(kn)
+    if not keywords:
+        keywords = ["news", "world", "people", "nature", "city"]
+
+    from app.services.image_service import enrich_article_images
+    from app.services.image_validator import is_valid_image_url
+
+    filled = 0
+    for i, slot in enumerate(current):
+        if slot is not None:
+            continue
+        kw = keywords[i % len(keywords)]
+        url = await enrich_article_images(-(site_id * 10 + i), f"{kw} professional photography")
+        if url and await is_valid_image_url(url):
+            current[i] = url; filled += 1
+        else:
+            url2 = await enrich_article_images(-(site_id * 10 + i + 50), kw)
+            if url2 and await is_valid_image_url(url2):
+                current[i] = url2; filled += 1
+
+    images = [u for u in current if u is not None]
+    config["default_images"] = images
+    site.config = config
+    db.commit()
+    db.refresh(site)
+
+    logger.info("fill_site_default_images: filled %d slots for site %d", filled, site_id)
+    return {"site_id": site_id, "images": images}
+
+
+# ---------------------------------------------------------------------------
+# DELETE one default image slot — removes it and optionally auto-fills
+# ---------------------------------------------------------------------------
+
+@router.delete("/{site_id}/default-images/{index}", status_code=status.HTTP_200_OK)
+async def delete_site_default_image(
+    site_id: int,
+    index: int,
+    auto_fill: bool = True,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Remove the image at the given zero-based index. If auto_fill=true, replaces with a new Unsplash image."""
+    site = db.query(Site).filter(Site.id == site_id).first()
+    if not site:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
+
+    config = dict(site.config or {})
+    images = list(config.get("default_images") or [])
+
+    if index < 0 or index >= len(images):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Index {index} out of range (0–{max(0, len(images)-1)})",
+        )
+
+    images.pop(index)
+
+    if auto_fill:
+        seen: set[str] = set()
+        keywords: list[str] = []
+        if site.name:
+            n = site.name.lower().strip()
+            keywords.append(n); seen.add(n)
+        for job in db.query(ScrapeJob).filter(ScrapeJob.site_id == site_id).all():
+            for kw in (job.keywords or []):
+                kn = kw.lower().strip()
+                if kn and kn not in seen:
+                    seen.add(kn); keywords.append(kn)
+        if not keywords:
+            keywords = ["news", "world", "people", "nature", "city"]
+
+        from app.services.image_service import enrich_article_images
+        from app.services.image_validator import is_valid_image_url
+
+        kw = keywords[index % len(keywords)]
+        url = await enrich_article_images(-(site_id * 10 + index), f"{kw} professional photography")
+        if url and await is_valid_image_url(url):
+            images.append(url)
+        else:
+            url2 = await enrich_article_images(-(site_id * 10 + index + 50), kw)
+            if url2 and await is_valid_image_url(url2):
+                images.append(url2)
+
+    config["default_images"] = images
+    site.config = config
+    db.commit()
+    db.refresh(site)
+
+    logger.info("delete_site_default_image: removed index %d for site %d (auto_fill=%s)", index, site_id, auto_fill)
     return {"site_id": site_id, "images": images}
 
 

@@ -285,6 +285,9 @@ GET                    /sites/stats           # per-site article counts, pin cou
 POST                   /sites/ai-preview      # AI-generated site config preview (admin)
 POST                   /sites/{id}/ai-enrich  # fill missing tagline/about/categories via Claude (admin)
 GET                    /sites/{id}/default-images  # fetch+persist 5 curated Unsplash images (admin)
+PATCH                  /sites/{id}/default-images  # save curated list of up to 5 URLs (admin)
+POST                   /sites/{id}/default-images/fill  # fill empty slots via Unsplash (admin)
+DELETE                 /sites/{id}/default-images/{index}  # remove one slot, auto-fill replacement (admin)
 
 GET|POST|PATCH|DELETE  /cms/articles
 GET                    /cms/articles/stats
@@ -392,7 +395,7 @@ GET        /analytics
 - **Architecture.jsx FlowTab v2**: `FlowStep` component wraps `Node` with `GLOW_SHADOW` box-shadow on active; Trends pipeline moved to horizontal sub-flow bar at bottom; security badges row below flow; detail card still expands below diagram on click
 - **`POST /sites/{id}/ai-enrich`**: async route that fills missing tagline/about/default_category_names via Claude Haiku; auto-creates Category rows from result; requires admin; registered before `PATCH /{site_id}`
 - **`GET /sites/{id}/default-images`**: builds keyword list from site name + categories + tagline; calls Unsplash for 5 images; persists to `site.config.default_images`; returns `{site_id, images}`
-- **SiteModal.jsx**: yellow warning banner when editing site with missing tagline/about/categories ("Some fields are missing — would you like AI to fill them automatically?"); "Yes" calls `POST /sites/{id}/ai-enrich` then merges result into form; Default Images section shows 5 thumbnails with per-slot "Replace" button; "Fetch images" button calls `GET /sites/{id}/default-images`
+- **SiteModal.jsx**: yellow warning banner when editing site with missing tagline/about/categories; "Yes, fill with AI" calls `POST /sites/{id}/ai-enrich`; Default Images section — full 5-slot manager: per-slot thumbnail with hover controls (↺ Replace with Unsplash via DELETE+auto_fill, ✎ Set URL via PATCH, × Remove via DELETE+no_fill); empty slots show +/Auto-fill/Enter URL; top bar has "✦ Auto-fill empty" (POST /fill) and "↻ Refresh all" (GET) buttons; per-slot URL input with Set/✕ inline
 - **`defaultImages.js` updated**: `getDefaultImage(keywords, index, storedImages=null)` — prefers `storedImages` (from `site.config.default_images`) over keyword-based Unsplash redirects
 - **`SiteContext.jsx`**: exposes `siteDefaultImages` (from `site.config.default_images`, or null); `ArticleCard` uses it as third arg to `getDefaultImage`
 - **`POST /admin/images/audit`**: scans published articles for null/noise/broken images; HEAD-checks URLs with 5s timeout; calls Unsplash image service for replacements; returns `{total_inspected, missing, noise, broken, fixed, fix_failed, details[]}`; hard limit of 200 articles per run; registered in `main.py`
@@ -403,7 +406,7 @@ GET        /analytics
 - **`ai_review.py` image pipeline**: replaced simple `enrich_article_images` call with `validate_and_fix_article_image` — validates existing `main_image_url` first, retries with keyword variants, falls back to `site.config.default_images`; published articles never left without an image
 - **`GET /sites/{id}/default-images` improved**: appends "professional photography" to each keyword before querying Unsplash; validates each result with `is_valid_image_url` before saving; retries with bare keyword then Unsplash redirect fallback
 - **`POST /sites` auto-default-images**: after creating a site, if `config.default_images` is absent, fires `asyncio.create_task()` to fetch 5 curated images in the background (client not blocked)
-- **`defaultImages.js` three-tier fallback**: Tier 1 = `storedImages` (site.config.default_images), Tier 2 = keyword Unsplash redirect, Tier 3 = `HARDCODED_FALLBACKS` (5 permanent `source.unsplash.com/featured/?{topic}` URLs); `getDefaultImage()` always returns a non-null string
+- **`defaultImages.js` simplified**: removed Tier 2 (keyword Unsplash redirect) and Tier 3 (HARDCODED_FALLBACKS) — `getDefaultImage()` now returns `null` when no `storedImages` are set; callers render a colour placeholder (site `--color-primary`) instead of a mismatched photo
 - **Bulk image fix run**: 63 published articles scanned on 2026-03-14; 22 fixed, 39 already valid, 2 failed (no Unsplash results); image_worker will retry on next cycle
 - **Image specificity overhaul** (2026-03-14):
   - `GET /public/sites/{id}` returns `scrape_keywords[]` — aggregated from site's ScrapeJob rows, deduped, order preserved; `SitePublicResponse` schema extends `SiteResponse`
@@ -537,10 +540,15 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | Editor's Pick toggle | `frontend/src/apps/cms/ArticleDetail.jsx` | ✅ Done |
 | Reusability refactor | `components/AiScoreBadge`, `StatusBadge`, `PinModal`, `utils/formatDate`, deleted `review/ConfirmDialog` | ✅ Done |
 | Working Rule 9 + `/refactor` command | `CLAUDE.md`, `.claude/commands/refactor.md` | ✅ Done |
+| Default Images Manager (backend) | `app/routes/sites/sites.py` — PATCH, POST /fill, DELETE /{index} | ✅ Done |
+| Default Images Manager (frontend) | `SiteModal.jsx`, `services/sites.js` — full 5-slot manager | ✅ Done |
+| `defaultImages.js` simplified | `site-renderer/src/utils/defaultImages.js` — removed Tier 2+3, returns null | ✅ Done |
+| `ArticleCard.jsx` null-image handling | `site-renderer/src/components/ArticleCard.jsx` — colour placeholder + admin Edit link | ✅ Done |
 
 ### Current known issues / state
 
 - **API Usage dashboard shows zeros** until new API calls are made post-migration. Trigger a scrape job or AI review to start populating `api_usage_log`. Historical calls before this session are not backfilled.
+- **Sites without default_images** set will show coloured placeholders for articles missing `main_image_url`. Open each site in the admin Site modal and click "✦ Auto-fill empty" to populate.
 - **Site 1 (Shih Tzu):** Article 13 ("סרגל נגישות אתר") is off-topic; may want to manually remove.
 - **Logo quality:** SDXL logos at 1536×640 are reasonable. Upgrading to DALL-E 3 would give proper 4:1 banner ratio.
 - **No rate limiting** on `/analytics/track`, `/auth/login`, `/auth/register` — acceptable for dev, required before production.
@@ -549,8 +557,8 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 
 ### Exact next steps to continue from
 
-1. Run a scrape job to populate `api_usage_log` and verify the API Costs dashboard shows live data
-2. Add Analytics page at `/admin/analytics` (currently Dashboard at `/admin` doubles as analytics — consider splitting into dedicated route, or add "Analytics 📊" nav link)
+1. Open each site in the admin Site modal → Default Images → "✦ Auto-fill empty" to ensure all 5 sites have curated default images
+2. Run a scrape job to populate `api_usage_log` and verify the API Costs dashboard shows live data
 3. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
 4. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
 5. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
