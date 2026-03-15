@@ -47,13 +47,14 @@ from app.database import SessionLocal
 from app.models.article import Article, ArticleStatus
 from app.models.scrape_job import ScrapeJob
 from app.models.site import Site
+from app.services import settings_service
 from app.services.image_validator import is_valid_image_url, validate_and_fix_article_image
 
 logger = logging.getLogger(__name__)
 
-IMAGE_WORKER_INTERVAL_HOURS: int = 6
-RATE_LIMIT_DELAY: float = 1.0   # seconds between Unsplash API calls
-STARTUP_DELAY_SECONDS: float = 10.0  # wait before the first pass
+_DEFAULT_INTERVAL_HOURS: int = 6   # fallback if platform_settings DB is unavailable
+RATE_LIMIT_DELAY: float = 1.0       # seconds between Unsplash API calls (infrastructure constant)
+STARTUP_DELAY_SECONDS: float = 10.0 # wait before the first pass (infrastructure constant)
 
 # Matches the frontend hardcoded-fallback redirect pattern — these should be
 # replaced with curated images rather than kept as-is.
@@ -215,15 +216,16 @@ async def image_worker_loop() -> None:
     3. Sleep ``IMAGE_WORKER_INTERVAL_HOURS`` and repeat.
     """
     logger.info(
-        "Image worker started (startup delay=%ds, interval=%dh)",
+        "Image worker started (startup delay=%ds, interval from platform_settings)",
         int(STARTUP_DELAY_SECONDS),
-        IMAGE_WORKER_INTERVAL_HOURS,
     )
     await asyncio.sleep(STARTUP_DELAY_SECONDS)
 
     while True:
+        interval_hours = settings_service.get("image_worker_interval_hours", _DEFAULT_INTERVAL_HOURS)
         try:
             await _fix_article_images()
         except Exception:
             logger.exception("Image worker: unhandled error in _fix_article_images")
-        await asyncio.sleep(IMAGE_WORKER_INTERVAL_HOURS * 3600)
+        logger.debug("Image worker: sleeping %dh", interval_hours)
+        await asyncio.sleep(int(interval_hours) * 3600)

@@ -78,8 +78,8 @@ REGION_CONFIG: dict[str, str] = {
 # Default regions fetched on each worker run — all configured regions.
 DEFAULT_REGIONS: list[str] = list(REGION_CONFIG.keys())
 
-# How many trends to take per region
-TRENDS_PER_REGION = 10
+# Fallback — live value read from settings_service at fetch time
+_DEFAULT_TRENDS_PER_REGION = 10
 
 # ---------------------------------------------------------------------------
 # RSS fetch constants
@@ -571,9 +571,10 @@ def _fetch_rss_sync(geo: str) -> list[tuple[str, float]]:
         logger.warning("trends_service: RSS XML parse failed for geo=%s — %s", geo, exc)
         return []
 
+    per_region = settings_service.get("trends_per_region", _DEFAULT_TRENDS_PER_REGION)
     results: list[tuple[str, float]] = []
     for rank, item in enumerate(root.findall(".//item")):
-        if len(results) >= TRENDS_PER_REGION:
+        if len(results) >= per_region:
             break
 
         title_el = item.find("title")
@@ -811,6 +812,15 @@ async def create_site_from_trend(
         if trend.status == TrendStatus.dismissed:
             raise ValueError(f"Trend {trend_id} is dismissed")
 
+        # --- Enforce trend quality threshold ---
+        score_threshold = settings_service.get("trends_auto_site_threshold", 0.55)
+        if trend.score < score_threshold:
+            raise ValueError(
+                f"Trend score {trend.score:.2f} is below the quality threshold "
+                f"({score_threshold:.2f}). Lower trends_auto_site_threshold in Platform "
+                "Settings or choose a higher-scoring trend."
+            )
+
         # --- Enforce auto-site limit ---
         current_count = _count_auto_created_sites(db)
         limit = settings_service.get("trends_auto_site_limit", 3)
@@ -892,11 +902,12 @@ async def create_site_from_trend(
                 db.add(Category(name=cat_name.strip(), slug=slug, site_id=site.id))
 
         # --- Create ScrapeJob ---
+        default_freq = settings_service.get("trends_default_scrape_frequency_minutes", 60)
         job = ScrapeJob(
             site_id=site.id,
             keywords=keywords,
             language=language,
-            frequency_minutes=60,
+            frequency_minutes=int(default_freq),
             status=ScrapeJobStatus.pending,
         )
         db.add(job)

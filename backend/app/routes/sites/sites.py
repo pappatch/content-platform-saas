@@ -305,8 +305,10 @@ async def create_site(
                         _kws.append(cn)
                     if not _kws:
                         _kws = ["news", "world", "people", "nature", "city"]
+                    from app.services import settings_service as _ss
+                    _count = int(_ss.get("default_images_per_site", 5))
                     _images: list[str] = []
-                    for i in range(5):
+                    for i in range(_count):
                         kw = _kws[i % len(_kws)]
                         url = await enrich_article_images(-(sid * 10 + i), f"{kw} professional photography")
                         if url and await is_valid_image_url(url):
@@ -437,12 +439,15 @@ async def get_site_default_images(
     if not keywords:
         keywords = ["news", "world", "people", "nature", "city"]
 
-    # Fetch 5 validated images (one per keyword + "professional photography" suffix).
+    # Fetch N validated images (one per keyword + "professional photography" suffix).
+    # N = default_images_per_site platform setting (default 5).
     # Negative synthetic IDs used for logging only — won't collide with real article IDs.
+    from app.services import settings_service
     from app.services.image_service import enrich_article_images
     from app.services.image_validator import is_valid_image_url
+    n_images = int(settings_service.get("default_images_per_site", 5))
     images: list[str] = []
-    for i in range(5):
+    for i in range(n_images):
         kw = keywords[i % len(keywords)]
         enriched_kw = f"{kw} professional photography"
         url = await enrich_article_images(-(site_id * 10 + i), enriched_kw)
@@ -515,9 +520,11 @@ async def fill_site_default_images(
     if not site:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Site not found")
 
+    from app.services import settings_service as _ss_fill
+    n_slots = int(_ss_fill.get("default_images_per_site", 5))
     config = dict(site.config or {})
     current: list[Optional[str]] = list(config.get("default_images") or [])
-    while len(current) < 5:
+    while len(current) < n_slots:
         current.append(None)
 
     # Build keyword list from scrape jobs + site name

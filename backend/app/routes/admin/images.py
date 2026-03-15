@@ -25,6 +25,7 @@ from app.database import get_db
 from app.models.article import Article, ArticleStatus
 from app.models.user import User
 from app.security.permissions import require_admin
+from app.services import settings_service
 from app.services.image_service import enrich_article_images
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ _NOISE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-_MAX_ARTICLES = 200  # hard cap per audit run
+_MAX_ARTICLES_HARD_CAP = 1000  # absolute ceiling for the Query parameter
+_DEFAULT_MAX_ARTICLES = 200    # fallback if platform_settings DB is unavailable
 
 
 async def _is_broken_url(url: str) -> bool:
@@ -57,7 +59,7 @@ async def _is_broken_url(url: str) -> bool:
 @router.post("/audit")
 async def audit_images(
     fix: bool = Query(True, description="If true, replace broken/missing images via Unsplash"),
-    limit: int = Query(_MAX_ARTICLES, ge=1, le=_MAX_ARTICLES, description="Max articles to inspect"),
+    limit: int = Query(_DEFAULT_MAX_ARTICLES, ge=1, le=_MAX_ARTICLES_HARD_CAP, description="Max articles to inspect (ceiling from image_audit_max_articles platform setting)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
 ):
@@ -74,10 +76,11 @@ async def audit_images(
 
     Returns a JSON report with counts and per-article details.
     """
+    effective_limit = min(limit, settings_service.get("image_audit_max_articles", _DEFAULT_MAX_ARTICLES))
     articles = (
         db.query(Article)
         .filter(Article.status == ArticleStatus.published)
-        .limit(limit)
+        .limit(effective_limit)
         .all()
     )
 

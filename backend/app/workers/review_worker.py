@@ -18,10 +18,11 @@ import logging
 from app.database import SessionLocal
 from app.models.article import Article, ArticleStatus
 from app.services.ai_review import ai_review_and_enrich
+from app.services import settings_service
 
 logger = logging.getLogger(__name__)
 
-WORKER_INTERVAL_SECONDS: int = 30
+_DEFAULT_INTERVAL_SECONDS: int = 30
 
 
 def _pending_article_ids(db) -> list[int]:
@@ -58,10 +59,11 @@ async def review_worker_loop() -> None:
     Infinite async loop. Started as an asyncio.Task at app startup and
     cancelled cleanly on shutdown.
     """
-    logger.info("Review worker started (interval=%ds)", WORKER_INTERVAL_SECONDS)
+    logger.info("Review worker started (interval from platform_settings)")
     while True:
+        interval = settings_service.get("review_worker_interval_seconds", _DEFAULT_INTERVAL_SECONDS)
         try:
             await _process_pending()
         except Exception:
             logger.exception("Review worker: unhandled error in _process_pending")
-        await asyncio.sleep(WORKER_INTERVAL_SECONDS)
+        await asyncio.sleep(int(interval))

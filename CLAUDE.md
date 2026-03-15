@@ -236,7 +236,7 @@ Separate Vite app at port 5174+. Set `VITE_SITE_ID` in its `.env` to select whic
 - **Analytics** — page-view events per site/article, `created_at` timestamp
 - **Trend** — keyword, region, language, score (rank-derived 0–1), trend_date (YYYY-MM-DD), status (`new → used | dismissed`), optional `site_id` FK when used to create a site
 - **AppSetting** — key-value table for persistent feature settings. Current key: `trends_fetch_region` (ISO code or `""` for worldwide)
-- **PlatformSetting** — typed key-value table for tunable runtime parameters. Fields: key (PK), value, value_type (string/float/int/bool), description, updated_by_id (FK User), updated_at. 9 seeded defaults (see settings_service.py DEFAULTS) including `admin_theme_default`
+- **PlatformSetting** — typed key-value table for tunable runtime parameters. Fields: key (PK), value, value_type (string/float/int/bool), description, updated_by_id (FK User), updated_at. 21 seeded defaults in `settings_service.py DEFAULTS`: `ai_review_threshold`, `auto_publish_enabled`, `max_searches_per_job`, `min_paragraph_blocks`, `min_word_count`, `trends_fetch_interval_hours`, `trends_auto_site_limit`, `trends_auto_site_threshold` (now enforced in `create_site_from_trend()`), `admin_theme_default`, `scraper_tavily_max_results`, `scraper_google_max_results`, `scrape_worker_interval_seconds`, `ai_review_input_char_limit`, `ai_review_max_tokens`, `default_images_per_site`, `image_max_candidate_pages`, `image_worker_interval_hours`, `image_audit_max_articles`, `trends_per_region`, `trends_default_scrape_frequency_minutes`, `review_worker_interval_seconds`
 - **ApiUsageLog** — per-call telemetry for all external APIs. Fields: id, service (slug), endpoint, timestamp (indexed), success (bool), meta (JSON blob for tokens/credits/etc.). Written by `usage_service.log_api_call()` — never raises. Migration `c3d4e5f6a7b8`.
 
 ### Auth Flow
@@ -256,7 +256,7 @@ JWT issued at `/auth/login`. Claim `sub` = user ID (string), `role` = role value
 
 `services/ai_review.py`: single Anthropic API call using `tool_use` + `tool_choice="tool"` for structured JSON.
 
-- Model: `claude-haiku-4-5-20251001`, max 2048 tokens, input truncated to 4000 chars
+- Model: `claude-haiku-4-5-20251001`, max tokens from `ai_review_max_tokens` platform setting (default 4096), input truncated to `ai_review_input_char_limit` chars (default 8000)
 - Produces: rewritten `content_html`, `title`, `score` (0–1), `flags[]`, `seo_title`, `seo_description`, `seo_keywords`
 - Auto-detects source language; translates if source ≠ site language; sets `translated_from`
 - RTL-aware prompt hints for Hebrew / Arabic
@@ -265,7 +265,7 @@ JWT issued at `/auth/login`. Claim `sub` = user ID (string), `role` = role value
 
 ### Image Service
 
-`services/image_service.py`: calls Unsplash Search API (`per_page=10`) to find a relevant image for new articles. Requires `UNSPLASH_ACCESS_KEY`. Accepts `excluded_urls: set[str]` to prevent assigning the same Unsplash photo to multiple articles on the same site. Normalises all CDN URLs to their stable `photo-<id>` slug before comparing (Unsplash varies `ixid`/`ixlib` params). Tries up to `_MAX_CANDIDATE_PAGES=3` pages before accepting a last-resort URL.
+`services/image_service.py`: calls Unsplash Search API (`per_page=10`) to find a relevant image for new articles. Requires `UNSPLASH_ACCESS_KEY`. Accepts `excluded_urls: set[str]` to prevent assigning the same Unsplash photo to multiple articles on the same site. Normalises all CDN URLs to their stable `photo-<id>` slug before comparing (Unsplash varies `ixid`/`ixlib` params). Tries up to `image_max_candidate_pages` platform setting (default 3) pages before accepting a last-resort URL.
 
 ### Logo Service
 
@@ -433,6 +433,7 @@ GET        /analytics
 - **Review nav reorganization** (2026-03-15): `ReviewLayout.jsx` sidebar refactored to `NAV_SECTIONS` with REVIEW section — Pending Queue ✅ (NavLink /review), Published 📰 (→/cms/articles?status=published external), Removed 🗑️ (→/cms/articles?status=removed external)
 - **Editor's Pick toggle in ArticleDetail** (2026-03-15): `ArticleDetail.jsx` — replaced raw "Pin" checkbox card with "Editor's Pick" sidebar card; `PinModal` component inlined (same duration picker as in Articles.jsx); when not pinned: "⭐ Set as Editor's Pick" indigo button; when pinned: amber highlight card showing "📌 Featured" + expiry date + "Unpin" button; `pinUntilMut` sends `PATCH` with both `is_pinned` and `pinned_until`; modal closes on success via `onSuccess` callback
 - **Reusability refactor** (2026-03-15): extracted 5 shared items from page-level duplicates → `components/AiScoreBadge.jsx` (was in 4 files, `midThreshold` prop), `components/StatusBadge.jsx` (2 files), `components/PinModal.jsx` + exported `PIN_DURATIONS` (2 files; `pinLabel` prop), `utils/formatDate.js` (4 files; `showTime`/`showYear` opts); `apps/review/ConfirmDialog.jsx` deleted — `review/Dashboard.jsx` now imports from `components/ConfirmDialog` (z bumped to z-[60] to float above preview modal); Working Rule 9 added to CLAUDE.md; `/refactor` slash command created
+- **Hardcoded constants → PlatformSettings** (2026-03-15): all P0 + P1 constants migrated to `settings_service.py DEFAULTS` (12 new keys); all workers (`scrape_worker`, `review_worker`, `image_worker`) read interval from settings on each loop iteration so admin changes take effect without restart; `scraper.py` Tavily/Google result limits now from settings; `ai_review.py` input char limit + max tokens now from settings; `image_service.py` max candidate pages now from settings; `images.py` audit hard cap kept at 1000 (Query param ceiling), effective limit = `min(limit, settings_service.get("image_audit_max_articles"))`; `trends_service.py` per-region count + default scrape frequency now from settings; `trends_auto_site_threshold` dead setting wired into `create_site_from_trend()` — rejects trends below threshold before site limit check; `Settings.jsx` GROUPS reorganized from 5 → 6 sections: AI & Content Quality, Scraper, Images, Trends, Workers, Interface
 
 ### 🔲 Next Steps (priority order)
 
@@ -544,6 +545,7 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | Default Images Manager (frontend) | `SiteModal.jsx`, `services/sites.js` — full 5-slot manager | ✅ Done |
 | `defaultImages.js` simplified | `site-renderer/src/utils/defaultImages.js` — removed Tier 2+3, returns null | ✅ Done |
 | `ArticleCard.jsx` null-image handling | `site-renderer/src/components/ArticleCard.jsx` — colour placeholder + admin Edit link | ✅ Done |
+| Hardcoded constants → PlatformSettings | `settings_service.py`, `scraper.py`, `ai_review.py`, `image_worker.py`, `review_worker.py`, `scrape_worker.py`, `image_service.py`, `images.py`, `trends_service.py`, `sites.py`, `Settings.jsx` | ✅ Done |
 
 ### Current known issues / state
 

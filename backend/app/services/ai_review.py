@@ -47,8 +47,10 @@ settings = get_settings()
 # ---------------------------------------------------------------------------
 
 MODEL = "claude-haiku-4-5-20251001"
-INPUT_CHAR_LIMIT = 4000   # max chars sent to API per article
-MAX_TOKENS = 2048          # enough for a rewritten article + metadata
+
+# Fallback constants — live values read from settings_service at call time.
+_DEFAULT_INPUT_CHAR_LIMIT = 8000
+_DEFAULT_MAX_TOKENS = 4096
 
 LANGUAGE_NAMES = {
     "en": "English",
@@ -127,10 +129,11 @@ _REWRITE_TOOL = {
 
 def _serialize_content_for_prompt(article_title: str, content_html: str) -> str:
     """
-    Truncate article title + body to INPUT_CHAR_LIMIT characters for the prompt.
+    Truncate article title + body to ai_review_input_char_limit characters for the prompt.
     """
+    char_limit = settings_service.get("ai_review_input_char_limit", _DEFAULT_INPUT_CHAR_LIMIT)
     header = f"TITLE: {article_title}\n\nCONTENT:\n"
-    remaining = INPUT_CHAR_LIMIT - len(header)
+    remaining = char_limit - len(header)
     if remaining <= 0:
         return header
     return header + (content_html or "")[:remaining]
@@ -375,7 +378,7 @@ async def _call_rewrite_api(prompt: str) -> dict:
     try:
         response = await client.messages.create(
             model=MODEL,
-            max_tokens=MAX_TOKENS,
+            max_tokens=settings_service.get("ai_review_max_tokens", _DEFAULT_MAX_TOKENS),
             tools=[_REWRITE_TOOL],
             tool_choice={"type": "tool", "name": "rewrite_article"},
             messages=[{"role": "user", "content": prompt}],

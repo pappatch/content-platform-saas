@@ -34,14 +34,15 @@ from typing import Union
 import httpx
 
 from app.config import get_settings
+from app.services import settings_service
 from app.services.usage_service import log_api_call
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _UNSPLASH_SEARCH_URL = "https://api.unsplash.com/search/photos"
-_CANDIDATES_PER_PAGE = 10   # results fetched per API call
-_MAX_CANDIDATE_PAGES = 3    # pages tried before giving up on a query
+_CANDIDATES_PER_PAGE = 10          # results fetched per API call (fixed page size)
+_DEFAULT_MAX_CANDIDATE_PAGES = 3   # fallback if platform_settings DB is unavailable
 
 # Matches the Unsplash photo ID in a CDN URL, e.g. "photo-1721781060617-2c451646fee7"
 _UNSPLASH_PHOTO_ID_RE = re.compile(r"photo-[a-f0-9]+-[a-f0-9]+", re.IGNORECASE)
@@ -164,8 +165,9 @@ async def enrich_article_images(
     excluded_keys: set[str] = {_unsplash_photo_key(u) for u in (excluded_urls or set())}
     last_resort: str | None = None
 
+    max_pages = settings_service.get("image_max_candidate_pages", _DEFAULT_MAX_CANDIDATE_PAGES)
     for query in queries:
-        for page in range(1, _MAX_CANDIDATE_PAGES + 1):
+        for page in range(1, int(max_pages) + 1):
             candidates = await _fetch_unsplash_candidates(article_id, query, page=page)
             if not candidates:
                 break  # no more results for this query — try next keyword

@@ -17,10 +17,11 @@ from datetime import datetime, timezone
 from app.database import SessionLocal
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
 from app.services.scraper import scrape_and_save
+from app.services import settings_service
 
 logger = logging.getLogger(__name__)
 
-WORKER_INTERVAL_SECONDS: int = 60
+_DEFAULT_INTERVAL_SECONDS: int = 60
 
 
 def _due_jobs(db) -> list[ScrapeJob]:
@@ -67,10 +68,11 @@ async def worker_loop() -> None:
     Infinite async loop. Intended to be launched as an asyncio.Task at
     application startup and cancelled on shutdown.
     """
-    logger.info("Scrape worker started (interval=%ds)", WORKER_INTERVAL_SECONDS)
+    logger.info("Scrape worker started (interval from platform_settings)")
     while True:
+        interval = settings_service.get("scrape_worker_interval_seconds", _DEFAULT_INTERVAL_SECONDS)
         try:
             await _run_due_jobs()
         except Exception:
             logger.exception("Worker: unhandled error in _run_due_jobs")
-        await asyncio.sleep(WORKER_INTERVAL_SECONDS)
+        await asyncio.sleep(int(interval))

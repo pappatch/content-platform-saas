@@ -59,10 +59,8 @@ MAX_BODY_BYTES: int = 5 * 1024 * 1024  # 5 MB
 _DEFAULT_MAX_SEARCHES: int = 10
 _DEFAULT_MIN_PARAGRAPHS: int = 3
 _DEFAULT_MIN_WORDS: int = 100
-
-# Results requested from each search provider
-TAVILY_MAX_RESULTS: int = 7
-GOOGLE_MAX_RESULTS: int = 5
+_DEFAULT_TAVILY_MAX_RESULTS: int = 7
+_DEFAULT_GOOGLE_MAX_RESULTS: int = 5
 
 REQUEST_HEADERS = {
     "User-Agent": (
@@ -164,7 +162,7 @@ async def _tavily_search(keywords: list[str], language: str) -> list[dict]:
         resp = client.search(
             query=query,
             search_depth="advanced",
-            max_results=TAVILY_MAX_RESULTS,
+            max_results=settings_service.get("scraper_tavily_max_results", _DEFAULT_TAVILY_MAX_RESULTS),
             include_raw_content=False,
         )
         return resp.get("results", [])
@@ -218,7 +216,7 @@ async def _google_search(keywords: list[str], language: str) -> list[dict]:
         )
         result = (
             service.cse()
-            .list(q=query, cx=settings.google_cse_id, num=GOOGLE_MAX_RESULTS, lr=lr_param)
+            .list(q=query, cx=settings.google_cse_id, num=settings_service.get("scraper_google_max_results", _DEFAULT_GOOGLE_MAX_RESULTS), lr=lr_param)
             .execute()
         )
         return result.get("items", [])

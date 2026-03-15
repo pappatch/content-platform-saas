@@ -64,9 +64,9 @@ DEFAULTS: list[dict] = [
         "value":       "0.55",
         "value_type":  ValueType.float,
         "description": (
-            "Minimum trend score (0–1) before a trending keyword can be used "
-            "to automatically create a new site. Not yet enforced — reserved for "
-            "future automatic site-creation from the trends worker."
+            "Minimum trend score (0–1) for a trending keyword to be eligible for "
+            "site creation via create_site_from_trend(). Trends scoring below this "
+            "threshold are rejected even when created manually."
         ),
     },
     {
@@ -123,6 +123,131 @@ DEFAULTS: list[dict] = [
             "Default admin panel theme for all users on first visit. "
             "Accepted values: light, dark. Individual users can override this "
             "with the toggle in the nav bar; their choice is persisted to localStorage."
+        ),
+    },
+    # -----------------------------------------------------------------------
+    # Scraper — search provider limits
+    # -----------------------------------------------------------------------
+    {
+        "key":         "scraper_tavily_max_results",
+        "value":       "7",
+        "value_type":  ValueType.int,
+        "description": (
+            "Maximum results requested from Tavily per scrape job search. "
+            "Higher values increase article variety but consume more Tavily API quota."
+        ),
+    },
+    {
+        "key":         "scraper_google_max_results",
+        "value":       "5",
+        "value_type":  ValueType.int,
+        "description": (
+            "Maximum results requested from Google Custom Search per scrape job run. "
+            "Google CSE free tier allows 100 queries/day; keep this low to conserve quota."
+        ),
+    },
+    {
+        "key":         "scrape_worker_interval_seconds",
+        "value":       "60",
+        "value_type":  ValueType.int,
+        "description": (
+            "How often (in seconds) the scrape worker wakes to check for due jobs. "
+            "Lower values give faster job execution but increase CPU usage."
+        ),
+    },
+    # -----------------------------------------------------------------------
+    # AI Review — model parameters
+    # -----------------------------------------------------------------------
+    {
+        "key":         "ai_review_input_char_limit",
+        "value":       "8000",
+        "value_type":  ValueType.int,
+        "description": (
+            "Maximum characters of article content sent to Claude for rewriting. "
+            "Higher values improve output quality but increase Anthropic API cost."
+        ),
+    },
+    {
+        "key":         "ai_review_max_tokens",
+        "value":       "4096",
+        "value_type":  ValueType.int,
+        "description": (
+            "Maximum output tokens Claude may generate per article review. "
+            "Raise for longer rewrites; lower to reduce per-article API cost."
+        ),
+    },
+    # -----------------------------------------------------------------------
+    # Images
+    # -----------------------------------------------------------------------
+    {
+        "key":         "default_images_per_site",
+        "value":       "5",
+        "value_type":  ValueType.int,
+        "description": (
+            "Number of curated default images fetched from Unsplash for each site. "
+            "These are used as fallbacks for articles that have no main image."
+        ),
+    },
+    {
+        "key":         "image_max_candidate_pages",
+        "value":       "3",
+        "value_type":  ValueType.int,
+        "description": (
+            "Maximum Unsplash API pages tried per search query when looking for a "
+            "unique image (10 candidates per page). Higher values reduce duplicates "
+            "but increase Unsplash API quota usage."
+        ),
+    },
+    {
+        "key":         "image_worker_interval_hours",
+        "value":       "6",
+        "value_type":  ValueType.int,
+        "description": (
+            "Hours between image worker passes. Each pass scans all published articles "
+            "for missing or broken images and replaces them via Unsplash."
+        ),
+    },
+    {
+        "key":         "image_audit_max_articles",
+        "value":       "200",
+        "value_type":  ValueType.int,
+        "description": (
+            "Maximum number of articles inspected per manual image audit run "
+            "(POST /admin/images/audit). Raise for large sites; lower to keep "
+            "audit requests fast."
+        ),
+    },
+    # -----------------------------------------------------------------------
+    # Trends
+    # -----------------------------------------------------------------------
+    {
+        "key":         "trends_per_region",
+        "value":       "10",
+        "value_type":  ValueType.int,
+        "description": (
+            "Maximum trending topics ingested per region on each Google Trends "
+            "fetch. Capped by Google's RSS feed which returns at most 20 items."
+        ),
+    },
+    {
+        "key":         "trends_default_scrape_frequency_minutes",
+        "value":       "60",
+        "value_type":  ValueType.int,
+        "description": (
+            "Default scrape job frequency (minutes) assigned to sites auto-created "
+            "from Google Trends. Can be edited per-job after creation."
+        ),
+    },
+    # -----------------------------------------------------------------------
+    # Workers
+    # -----------------------------------------------------------------------
+    {
+        "key":         "review_worker_interval_seconds",
+        "value":       "30",
+        "value_type":  ValueType.int,
+        "description": (
+            "How often (in seconds) the review worker polls for pending articles "
+            "to send to Claude for AI review. Lower values reduce publish latency."
         ),
     },
 ]
