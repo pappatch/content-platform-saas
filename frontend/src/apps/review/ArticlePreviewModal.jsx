@@ -4,22 +4,7 @@ import { getArticle } from '../../services/articles'
 import { getSites } from '../../services/sites'
 import Modal from '../../components/Modal'
 import Spinner from '../../components/Spinner'
-
-function AiScoreBadge({ score }) {
-  if (score == null) return <span className="text-xs text-gray-400">—</span>
-  const pct = Math.round(score * 100)
-  const cls =
-    score >= 0.7
-      ? 'bg-green-100 text-green-700'
-      : score >= 0.5
-      ? 'bg-yellow-100 text-yellow-700'
-      : 'bg-red-100 text-red-700'
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {pct}%
-    </span>
-  )
-}
+import AiScoreBadge from '../../components/AiScoreBadge'
 
 function FlagChip({ label }) {
   return (

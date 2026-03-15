@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateArticle } from '../../services/articles'
 import ReviewQueue from './ReviewQueue'
 import ArticlePreviewModal from './ArticlePreviewModal'
-import ConfirmDialog from './ConfirmDialog'
+import ConfirmDialog from '../../components/ConfirmDialog'
 
 /**
  * ReviewDashboard — entry point for /review.

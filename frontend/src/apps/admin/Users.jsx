@@ -4,15 +4,12 @@ import { getUsers, updateUser } from '../../services/users'
 import { useAuth } from '../../hooks/useAuth'
 import UserModal from './UserModal'
 import Spinner from '../../components/Spinner'
+import { formatDate } from '../../utils/formatDate'
 
 const ROLE_BADGE = {
   admin:  'bg-indigo-100 text-indigo-700',
   editor: 'bg-emerald-100 text-emerald-700',
   viewer: 'bg-gray-100 text-gray-600',
-}
-
-function formatDate(iso) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
 function Toggle({ checked, onChange, disabled }) {
@@ -116,7 +113,7 @@ export default function Users() {
                         {user.role}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(user.created_at)}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">{formatDate(user.created_at, { showTime: false, showYear: true })}</td>
                     <td className="px-4 py-3 text-center">
                       <Toggle
                         checked={user.is_active}

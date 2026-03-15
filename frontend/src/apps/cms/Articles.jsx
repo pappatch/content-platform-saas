@@ -6,34 +6,9 @@ import { getSites } from '../../services/sites'
 import { getCategories } from '../../services/categories'
 import Spinner from '../../components/Spinner'
 import ConfirmDialog from '../../components/ConfirmDialog'
-
-function AiScoreBadge({ score }) {
-  if (score == null) return <span className="text-xs text-gray-400">—</span>
-  const pct = Math.round(score * 100)
-  const cls = score >= 0.7
-    ? 'bg-green-100 text-green-700'
-    : score >= 0.4
-    ? 'bg-yellow-100 text-yellow-700'
-    : 'bg-red-100 text-red-700'
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
-      {pct}%
-    </span>
-  )
-}
-
-function StatusBadge({ status }) {
-  const map = {
-    pending: 'bg-yellow-100 text-yellow-700',
-    published: 'bg-green-100 text-green-700',
-    removed: 'bg-red-100 text-red-700',
-  }
-  return (
-    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium capitalize ${map[status] ?? 'bg-gray-100 text-gray-600'}`}>
-      {status}
-    </span>
-  )
-}
+import AiScoreBadge from '../../components/AiScoreBadge'
+import StatusBadge from '../../components/StatusBadge'
+import PinModal from '../../components/PinModal'
 
 const AI_RANGE_OPTIONS = [
   { label: 'All scores', value: '' },
@@ -367,66 +342,3 @@ export default function Articles() {
   )
 }
 
-// ─── Pin Duration Modal ───────────────────────────────────────────────────────
-
-const PIN_DURATIONS = [
-  { label: '1 day',   ms: 86_400_000 },
-  { label: '1 week',  ms: 7 * 86_400_000 },
-  { label: '1 month', ms: 30 * 86_400_000 },
-]
-
-function PinModal({ article, loading, onPin, onCancel }) {
-  const isCurrentlyPinned =
-    article.is_pinned || (article.pinned_until && new Date(article.pinned_until) > new Date())
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
-        <h3 className="text-base font-semibold text-gray-900 mb-1">
-          {isCurrentlyPinned ? 'Unpin article?' : 'Pin article'}
-        </h3>
-        <p className="text-sm text-gray-500 mb-5 line-clamp-2">{article.title}</p>
-
-        {isCurrentlyPinned ? (
-          <>
-            <p className="text-sm text-gray-600 mb-4">
-              This article is currently pinned. Remove the pin?
-            </p>
-            <div className="flex justify-end gap-2">
-              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
-              <button
-                onClick={() => onPin(0)}
-                disabled={loading}
-                className="px-4 py-2 text-sm rounded-lg bg-gray-800 text-white hover:bg-gray-900 disabled:opacity-50"
-              >
-                {loading ? 'Saving…' : 'Unpin'}
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-gray-600 mb-3">Choose how long to feature this article at the top:</p>
-            <div className="flex flex-col gap-2 mb-5">
-              {PIN_DURATIONS.map(({ label, ms }) => (
-                <button
-                  key={ms}
-                  onClick={() => onPin(ms)}
-                  disabled={loading}
-                  className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 hover:border-indigo-400 hover:bg-indigo-50 text-sm font-medium text-gray-800 transition-colors disabled:opacity-50"
-                >
-                  {label}
-                  <span className="float-right text-gray-400 font-normal">
-                    until {new Date(Date.now() + ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="flex justify-end">
-              <button onClick={onCancel} className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50">Cancel</button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}

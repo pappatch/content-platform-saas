@@ -6,6 +6,7 @@ import { getJobs, runJob } from '../../services/scrapeJobs'
 import SiteModal from './SiteModal'
 import Spinner from '../../components/Spinner'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import { formatDate } from '../../utils/formatDate'
 
 const LANG_LABEL = { en: 'EN', fr: 'FR', he: 'HE', ar: 'AR' }
 const TEMPLATE_BADGE = {
@@ -20,13 +21,6 @@ const JOB_STATUS_BADGE = {
   running: 'bg-blue-100 text-blue-700',
   done:    'bg-green-100 text-green-700',
   failed:  'bg-red-100 text-red-700',
-}
-
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
-  })
 }
 
 function ColorSwatch({ hex }) {

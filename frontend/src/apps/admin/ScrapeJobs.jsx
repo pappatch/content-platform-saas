@@ -5,20 +5,13 @@ import { getSites } from '../../services/sites'
 import ScrapeJobModal from './ScrapeJobModal'
 import Spinner from '../../components/Spinner'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import { formatDate } from '../../utils/formatDate'
 
 const STATUS_BADGE = {
   pending:  'bg-yellow-100 text-yellow-700',
   running:  'bg-blue-100  text-blue-700',
   done:     'bg-green-100 text-green-700',
   failed:   'bg-red-100   text-red-700',
-}
-
-function formatDate(iso) {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleString('en-GB', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  })
 }
 
 function FrequencyLabel({ minutes }) {
@@ -126,7 +119,7 @@ export default function ScrapeJobs() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDate(job.last_run)}
+                      {formatDate(job.last_run, { showYear: true })}
                     </td>
                     <td className="px-4 py-3 text-right space-x-3 whitespace-nowrap">
                       <button

@@ -28,6 +28,7 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 | `/deploy` | AWS deployment checklist and status assessment |
 | `/trends` | Show today's trending topics by region; dismiss or create sites from trends |
 | `/api-costs` | Cost summary report from api_usage_log — calls and estimated spend per service for current month |
+| `/refactor` | Scan `frontend/src/` for duplicate components, copy-pasted logic, and misplaced shared code; auto-refactor on confirmation |
 
 ---
 
@@ -41,6 +42,7 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 6. **Auto-publish threshold is 0.5** — articles with `ai_score < 0.5` stay `pending` for editor review; articles scoring ≥ 0.5 are auto-published.
 7. **Reject = PATCH status=removed, not DELETE** — articles are soft-deleted for audit trail.
 8. **Never drop or recreate the DB** — always use `alembic upgrade head`.
+9. **Reusability first** — before writing any new component or function, search the codebase for existing similar code. Any component used in more than one place must live in `/components/` (frontend) or `/services/` (backend). Changes to shared components must be tested across all consumers.
 
 ---
 
@@ -419,6 +421,7 @@ GET        /analytics
 - **CMS nav reorganization** (2026-03-15): `CmsLayout.jsx` sidebar refactored to `NAV_SECTIONS` with 2 sections — CONTENT (Articles ✍️, Categories 🏷️), TOOLS (Pin Management 📌→/cms/articles, Review Queue ✅→/review external); same pattern as AdminLayout
 - **Review nav reorganization** (2026-03-15): `ReviewLayout.jsx` sidebar refactored to `NAV_SECTIONS` with REVIEW section — Pending Queue ✅ (NavLink /review), Published 📰 (→/cms/articles?status=published external), Removed 🗑️ (→/cms/articles?status=removed external)
 - **Editor's Pick toggle in ArticleDetail** (2026-03-15): `ArticleDetail.jsx` — replaced raw "Pin" checkbox card with "Editor's Pick" sidebar card; `PinModal` component inlined (same duration picker as in Articles.jsx); when not pinned: "⭐ Set as Editor's Pick" indigo button; when pinned: amber highlight card showing "📌 Featured" + expiry date + "Unpin" button; `pinUntilMut` sends `PATCH` with both `is_pinned` and `pinned_until`; modal closes on success via `onSuccess` callback
+- **Reusability refactor** (2026-03-15): extracted 5 shared items from page-level duplicates → `components/AiScoreBadge.jsx` (was in 4 files, `midThreshold` prop), `components/StatusBadge.jsx` (2 files), `components/PinModal.jsx` + exported `PIN_DURATIONS` (2 files; `pinLabel` prop), `utils/formatDate.js` (4 files; `showTime`/`showYear` opts); `apps/review/ConfirmDialog.jsx` deleted — `review/Dashboard.jsx` now imports from `components/ConfirmDialog` (z bumped to z-[60] to float above preview modal); Working Rule 9 added to CLAUDE.md; `/refactor` slash command created
 
 ### 🔲 Next Steps (priority order)
 
@@ -524,6 +527,8 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | CMS nav reorganization | `frontend/src/apps/cms/CmsLayout.jsx` | ✅ Done |
 | Review nav reorganization | `frontend/src/apps/review/ReviewLayout.jsx` | ✅ Done |
 | Editor's Pick toggle | `frontend/src/apps/cms/ArticleDetail.jsx` | ✅ Done |
+| Reusability refactor | `components/AiScoreBadge`, `StatusBadge`, `PinModal`, `utils/formatDate`, deleted `review/ConfirmDialog` | ✅ Done |
+| Working Rule 9 + `/refactor` command | `CLAUDE.md`, `.claude/commands/refactor.md` | ✅ Done |
 
 ### Current known issues / state
 

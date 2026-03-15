@@ -21,6 +21,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../api/client'
 import Spinner from '../../components/Spinner'
+import { formatDate } from '../../utils/formatDate'
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -99,18 +100,6 @@ function formatKey(key) {
     .join(' ')
 }
 
-/** Format a datetime string as a short relative / absolute label. */
-function formatDate(iso) {
-  if (!iso) return null
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      month: 'short', day: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    })
-  } catch {
-    return iso
-  }
-}
 
 // ---------------------------------------------------------------------------
 // SettingRow — one editable row per platform setting
