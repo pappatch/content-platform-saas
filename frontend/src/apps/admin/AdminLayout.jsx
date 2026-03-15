@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { to: '/admin/analytics', label: 'Analytics' },
   { to: '/admin/architecture', label: 'Architecture' },
   { to: '/admin/settings', label: 'Settings ⚙️' },
+  { to: '/admin/api-usage', label: 'API Costs 💰' },
 ]
 
 export default function AdminLayout() {

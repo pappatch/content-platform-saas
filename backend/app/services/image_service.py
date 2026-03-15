@@ -34,6 +34,7 @@ from typing import Union
 import httpx
 
 from app.config import get_settings
+from app.services.usage_service import log_api_call
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -100,6 +101,8 @@ async def _fetch_unsplash_candidates(
                 article_id, len(urls), query[:60], page,
             )
 
+        log_api_call("unsplash", "search_photos", success=True,
+                     meta={"results": len(urls), "page": page})
         return urls
 
     except httpx.HTTPStatusError as exc:
@@ -107,11 +110,14 @@ async def _fetch_unsplash_candidates(
             "_fetch_unsplash_candidates: HTTP %d for article %d",
             exc.response.status_code, article_id,
         )
+        log_api_call("unsplash", "search_photos", success=False,
+                     meta={"http_status": exc.response.status_code})
     except Exception:
         logger.warning(
             "_fetch_unsplash_candidates: failed for article %d",
             article_id, exc_info=True,
         )
+        log_api_call("unsplash", "search_photos", success=False)
     return []
 
 

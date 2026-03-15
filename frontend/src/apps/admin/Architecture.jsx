@@ -610,12 +610,12 @@ function ArchTab() {
       <LayerBox label="1 · External Services" color="amber">
         <div className="flex flex-wrap gap-2 justify-center">
           {[
-            { icon: '🔍', title: 'Tavily',            sub: 'article search + relevance score' },
-            { icon: '🔎', title: 'Google CSE',        sub: 'secondary keyword search' },
-            { icon: '🤖', title: 'Anthropic',         sub: 'Claude Haiku — AI review + config' },
-            { icon: '📷', title: 'Unsplash',          sub: 'image enrichment (UNSPLASH_ACCESS_KEY)' },
-            { icon: '🎨', title: 'Stability AI',      sub: 'SDXL logo generation (STABILITY_API_KEY)' },
-            { icon: '📡', title: 'Google Trends RSS', sub: 'trending keywords by region' },
+            { icon: '🔍', title: 'Tavily',            sub: '~$0.004/search · TAVILY_API_KEY' },
+            { icon: '🔎', title: 'Google CSE',        sub: 'free ≤100/day · $5/1K after' },
+            { icon: '🤖', title: 'Anthropic',         sub: '$0.25/1M in · $1.25/1M out (Haiku)' },
+            { icon: '📷', title: 'Unsplash',          sub: 'free demo · 50 req/hour limit' },
+            { icon: '🎨', title: 'Stability AI',      sub: '~$0.04/logo · optional key' },
+            { icon: '📡', title: 'Google Trends RSS', sub: 'free · no API key required' },
           ].map(n => <Node key={n.title} color="amber" {...n} />)}
         </div>
       </LayerBox>
@@ -644,6 +644,7 @@ function ArchTab() {
                 '/public/* (unauthenticated)',
                 '/admin/users',
                 '/admin/images/audit',
+                '/admin/api-usage (cost dashboard)',
                 '/analytics (track · read)',
               ].map(r => <div key={r} className={routeStyle}>{r}</div>)}
             </div>
@@ -661,6 +662,7 @@ function ArchTab() {
                   ['image_validator.py', 'HEAD-check · noise RE · trusted-CDN fast-path'],
                   ['logo_service.py',    'Stability AI SDXL 1536×640 · SVG fallback'],
                   ['trends_service.py',  'RSS fetch · pytrends explore · AI config'],
+                  ['usage_service.py',   'log_api_call() · fire-and-forget · all 6 services'],
                   ['settings_service.py','in-memory cache · typed key-value'],
                 ].map(([name, desc]) => (
                   <div key={name} className={svcStyle}>
@@ -776,7 +778,7 @@ function ArchTab() {
             {[
               {
                 group: 'Admin',
-                items: ['Dashboard', 'Sites', 'Scrape Jobs', 'Trends', 'Users', 'Architecture', 'Settings ⚙️'],
+                items: ['Dashboard', 'Sites', 'Scrape Jobs', 'Trends', 'Users', 'Architecture', 'Settings ⚙️', 'API Costs 💰'],
               },
               {
                 group: 'CMS',

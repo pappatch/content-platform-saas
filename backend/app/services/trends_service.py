@@ -49,6 +49,7 @@ import requests as _requests
 from app.config import get_settings
 from app.database import SessionLocal
 from app.services import settings_service
+from app.services.usage_service import log_api_call
 from app.models.app_setting import AppSetting
 from app.models.category import Category
 from app.models.site import Site, SiteLanguage, TextDirection, RTL_LANGUAGES
@@ -555,9 +556,13 @@ def _fetch_rss_sync(geo: str) -> list[tuple[str, float]]:
         logger.warning(
             "trends_service: RSS HTTP %s for geo=%s", exc.response.status_code, geo
         )
+        log_api_call("google_trends", "rss_fetch", success=False,
+                     meta={"geo": geo, "http_status": exc.response.status_code})
         return []
     except _requests.exceptions.RequestException as exc:
         logger.warning("trends_service: RSS request failed for geo=%s — %s", geo, exc)
+        log_api_call("google_trends", "rss_fetch", success=False,
+                     meta={"geo": geo, "error": type(exc).__name__})
         return []
 
     try:
@@ -591,6 +596,8 @@ def _fetch_rss_sync(geo: str) -> list[tuple[str, float]]:
     logger.info(
         "trends_service: RSS geo=%s returned %d item(s)", geo, len(results)
     )
+    log_api_call("google_trends", "rss_fetch", success=True,
+                 meta={"geo": geo, "items": len(results)})
     return results
 
 

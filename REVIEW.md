@@ -400,3 +400,50 @@ All new routes and services added since Session 1 are correctly protected and fo
 1. **R1** — Rate limiting on `/analytics/track`, `/auth/login`, `/auth/register`
 2. **R2** — DOMPurify client-side sanitization
 3. **R3** — CORS `allow_origins` must be updated from localhost before production deployment
+
+---
+
+## Session 3 — 2026-03-15
+
+### Changes Reviewed
+
+**API Usage & Costs dashboard** — `api_usage_log` table, `usage_service.py`, `GET /admin/api-usage`, `ApiUsage.jsx`, instrumentation of all 6 external service integrations.
+
+### Security Findings
+
+**`GET /admin/api-usage` — SAFE**
+- Route is behind `Depends(require_admin)` — only authenticated admins can access it. ✅
+- Stability AI live balance endpoint is called server-side; the API key is never forwarded to or returned to the frontend. ✅
+- Cost projections are estimates only — they use fixed rate constants, not live billing data. The response includes no pricing or account metadata beyond credit balance. ✅
+
+**`usage_service.log_api_call()` — SAFE**
+- Synchronous DB insert, never raises — all exceptions caught at `except Exception` and discarded. No information leakage risk. ✅
+- The `meta` field is written as a JSON blob from a controlled internal dict (never from user input). No injection risk. ✅
+- API keys and request contents are NOT written to `api_usage_log`; only service slug, endpoint name, success flag, and token/credit counts. ✅
+
+**`api_usage_log` table — SAFE**
+- No PII stored — service slugs, endpoint names, token counts, success booleans only. ✅
+- Table is append-only from the application perspective (no DELETE or UPDATE routes). ✅
+- Alembic migration `c3d4e5f6a7b8` creates two indexes (`service`, `timestamp`) — no unique constraint, so concurrent inserts cannot conflict. ✅
+
+**Service instrumentation (scraper, ai_review, image_service, logo_service, trends_service) — SAFE**
+- `log_api_call` is always called AFTER the external API responds (never before, never inside the sync thread). ✅
+- Errors in the external call are still properly propagated to the calling service; the log call is a side-effect only. ✅
+- Failure to write the log row is silently swallowed — does not affect service behaviour. ✅
+
+### New Recommendations
+
+**R14 — api_usage_log retention policy**
+The table grows indefinitely (one row per external API call). At scale (thousands of scrapes/day), it could become large. Add a periodic cleanup job or DB retention policy to delete rows older than 90 days. For now (dev environment, low volume) this is acceptable.
+
+**R15 — Cost projection accuracy**
+`cost_projected_eom` is computed as `cost_mtd / days_elapsed * days_in_month`. On day 1 of the month this gives a large projection from a single data point. Consider using a 7-day rolling average instead of a strict daily average for more stable projections.
+
+**R16 — Stability AI credits are in-flight only**
+`credits_remaining` is fetched live from `api.stability.ai/v1/user/balance` with an 8-second timeout. If the endpoint is slow or down, the field is `null` in the response. The frontend already handles `null` gracefully. No change needed now, but a cached credit value (refreshed every hour) would be more reliable.
+
+### Updated Overall Assessment
+
+**Rating: GOOD with well-understood gaps**
+
+The API Usage dashboard adds useful cost visibility without introducing new attack surface. All routes remain admin-only. The instrumentation is purely additive and does not change any service behaviour. Outstanding production blockers unchanged (R1, R2, R3).

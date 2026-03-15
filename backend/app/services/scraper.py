@@ -38,6 +38,7 @@ import httpx
 from app.config import get_settings
 from app.database import SessionLocal
 from app.services import settings_service
+from app.services.usage_service import log_api_call
 from app.models.article import Article, ArticleStatus
 from app.models.article_block import BlockType
 from app.models.scrape_job import ScrapeJob, ScrapeJobStatus
@@ -170,7 +171,7 @@ async def _tavily_search(keywords: list[str], language: str) -> list[dict]:
 
     try:
         raw = await asyncio.to_thread(_sync)
-        return [
+        results = [
             {
                 "url": r.get("url", ""),
                 "title": r.get("title", ""),
@@ -181,8 +182,13 @@ async def _tavily_search(keywords: list[str], language: str) -> list[dict]:
             for r in raw
             if r.get("url")
         ]
+        log_api_call("tavily", "search", success=True,
+                     meta={"results": len(results), "keywords": " ".join(keywords[:3])})
+        return results
     except Exception as exc:
         logger.warning("Tavily search failed (%s: %s)", type(exc).__name__, exc)
+        log_api_call("tavily", "search", success=False,
+                     meta={"error": type(exc).__name__})
         return []
 
 
@@ -219,7 +225,7 @@ async def _google_search(keywords: list[str], language: str) -> list[dict]:
 
     try:
         raw = await asyncio.to_thread(_sync)
-        return [
+        results = [
             {
                 "url": item.get("link", ""),
                 "title": item.get("title", ""),
@@ -230,8 +236,13 @@ async def _google_search(keywords: list[str], language: str) -> list[dict]:
             for item in raw
             if item.get("link")
         ]
+        log_api_call("google_cse", "search", success=True,
+                     meta={"results": len(results), "keywords": " ".join(keywords[:3])})
+        return results
     except Exception as exc:
         logger.warning("Google CSE search failed (%s: %s)", type(exc).__name__, exc)
+        log_api_call("google_cse", "search", success=False,
+                     meta={"error": type(exc).__name__})
         return []
 
 

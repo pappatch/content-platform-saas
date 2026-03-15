@@ -31,6 +31,7 @@ import logging
 import anthropic
 
 from app.config import get_settings
+from app.services.usage_service import log_api_call
 from app.database import SessionLocal
 from app.models.article import Article, ArticleStatus
 from app.models.site import Site, SiteLanguage
@@ -394,6 +395,15 @@ async def _call_rewrite_api(prompt: str) -> dict:
     except anthropic.APIError as exc:
         logger.error("Anthropic API: %s", exc)
         raise
+
+    log_api_call(
+        "anthropic", "messages_create", success=True,
+        meta={
+            "model":         MODEL,
+            "input_tokens":  response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        },
+    )
 
     for block in response.content:
         if block.type == "tool_use" and block.name == "rewrite_article":

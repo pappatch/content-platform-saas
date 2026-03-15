@@ -27,6 +27,7 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 | `/stats` | Full platform statistics: article counts, score distribution, job status, analytics |
 | `/deploy` | AWS deployment checklist and status assessment |
 | `/trends` | Show today's trending topics by region; dismiss or create sites from trends |
+| `/api-costs` | Cost summary report from api_usage_log — calls and estimated spend per service for current month |
 
 ---
 
@@ -101,6 +102,19 @@ TRENDS_AUTO_SITE_LIMIT=3
 
 If you add a new env var, add it to both `app/config.py` (pydantic-settings field) and `.env`.
 
+### API Key Cost Reference
+
+| Key | Required | Cost model | Without key |
+|-----|----------|-----------|-------------|
+| `ANTHROPIC_API_KEY` | **Yes** | $0.25/1M input + $1.25/1M output tokens (Haiku) | AI review disabled; articles stay pending indefinitely |
+| `TAVILY_API_KEY` | **Yes** | ~$0.004/search (estimated) | Scraper falls back to Google CSE only |
+| `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | **Yes** | Free ≤ 100 queries/day; $5/1000 thereafter | Scraper falls back to Tavily only |
+| `UNSPLASH_ACCESS_KEY` | **Yes** | Free (demo key: 50 req/hour) | Articles published without images; fallbacks used |
+| `STABILITY_API_KEY` | Optional | ~$0.04/image (≈ 1 credit/logo @ 1536×640) | SVG fallback logos generated offline instead |
+| `SECRET_KEY` | **Yes** | Free | JWT signing broken — never omit |
+
+All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usage`.
+
 ---
 
 ## Database Migrations (Alembic)
@@ -142,7 +156,8 @@ backend/
       sites/            # /sites CRUD
       cms/              # /cms/articles, /cms/categories
       scraper/          # /scraper/jobs (create, run, delete)
-      admin/            # /admin/users, /admin/analytics
+      admin/            # /admin/users, /admin/analytics, /admin/images/audit,
+                        #   /admin/api-usage (cost & usage dashboard)
       public/           # /public/* (unauthenticated renderer API)
     security/
       auth.py           # bcrypt hashing, JWT creation/decoding
@@ -152,7 +167,9 @@ backend/
       ai_review.py      # Claude Haiku review + rewrite + scoring + translation
       image_service.py  # Unsplash API enrichment for articles missing main_image_url
       image_validator.py # HEAD-check validation + retry/fallback for article images
-      trends_service.py # pytrends fetch → dedup → DB; AI site config generation
+      logo_service.py   # Stability AI SDXL 1536×640 logo generation + SVG fallback
+      trends_service.py # Google Trends RSS fetch → dedup → DB; AI site config
+      usage_service.py  # log_api_call() — fire-and-forget telemetry for all 6 external APIs
     utils/
       sanitize.py       # HTML sanitizer blocking XSS / script injection
     workers/
@@ -210,6 +227,7 @@ Separate Vite app at port 5174+. Set `VITE_SITE_ID` in its `.env` to select whic
 - **Trend** — keyword, region, language, score (rank-derived 0–1), trend_date (YYYY-MM-DD), status (`new → used | dismissed`), optional `site_id` FK when used to create a site
 - **AppSetting** — key-value table for persistent feature settings. Current key: `trends_fetch_region` (ISO code or `""` for worldwide)
 - **PlatformSetting** — typed key-value table for tunable runtime parameters. Fields: key (PK), value, value_type (string/float/int/bool), description, updated_by_id (FK User), updated_at. 9 seeded defaults (see settings_service.py DEFAULTS) including `admin_theme_default`
+- **ApiUsageLog** — per-call telemetry for all external APIs. Fields: id, service (slug), endpoint, timestamp (indexed), success (bool), meta (JSON blob for tokens/credits/etc.). Written by `usage_service.log_api_call()` — never raises. Migration `c3d4e5f6a7b8`.
 
 ### Auth Flow
 
@@ -285,6 +303,8 @@ POST             /trends/{id}/create-site       # create Site + ScrapeJob from t
 
 GET        /settings              # list all platform settings (admin)
 PATCH      /settings/{key}        # update one setting (admin, validates value_type)
+
+GET        /admin/api-usage       # per-service usage + cost stats from api_usage_log (admin)
 
 GET|PATCH  /admin/users
 POST       /admin/images/audit    # scan + fix broken/missing article images (admin)
@@ -393,8 +413,12 @@ GET        /analytics
 - **Bulk dedup fix** (site 1): all 19 published Shih Tzu articles now have 19 unique Unsplash photos (previously 3 photos shared across 19 articles); fix used article-specific English queries derived from Hebrew titles + seo_keywords
 - **Code quality**: `import json` moved to module level in `ai_review.py` (was inside `ai_review_and_enrich()`)
 - **End-of-session audit** (2026-03-14): full security + code review; Architecture.jsx updated with Stability AI, logo_service, image_validator, image_worker (Workers stat 3→4), /admin/images/audit route, sticky header + hero height notes in site renderer; REVIEW.md appended with new session findings
+- **Dark mode persistence fix** (2026-03-15): `ThemeContext.jsx` — API-set default now commits to localStorage; `useEffect` watching `isDark` always syncs both DOM class and localStorage; `applyThemeClass()` called synchronously in state initializer to prevent flash; `toggleTheme` simplified
+- **API Usage & Costs dashboard** (2026-03-15): `ApiUsageLog` ORM model + Alembic migration `c3d4e5f6a7b8`; `services/usage_service.py` `log_api_call()` sync helper (fire-and-forget, never raises); `GET /admin/api-usage` route aggregates per-service stats + cost estimates + 7-day sparklines; `ApiUsage.jsx` frontend with service cards, status badges, recharts sparklines, summary cost bar; services instrumented: Anthropic (token counts in meta), Unsplash, Tavily, Google CSE, Google Trends, Stability AI; nav item "API Costs 💰" added to AdminLayout
 
 ### 🔲 Next Steps (priority order)
+
+0. **API Usage dashboard — data population**: `api_usage_log` table exists and all services are instrumented; the dashboard will show zeros until new API calls are made. Run a scrape job or trigger AI review to populate data.
 
 1. **Bulk actions in CMS** — checkboxes partially exist in `Articles.jsx` but need backend: `PATCH /cms/articles/bulk` accepting array of IDs + action (publish/remove/reassign-category).
 
@@ -479,34 +503,34 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 
 ## Last Session Summary
 
-**Date:** 2026-03-14
+**Date:** 2026-03-15
 
 ### What was built this session
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Logo standards v2 | `logo_service.py`, `SiteBrand.jsx`, `Sites.jsx` | ✅ Done |
-| White Noise Hub color fix | DB direct update | ✅ Done |
-| Hero height fix (TemplateB) | `TemplateB.jsx` | ✅ Done — `min-h-[60vh] md:min-h-[75vh]` |
-| Sticky headers A/D/E | `TemplateA/D/E.jsx` | ✅ Done |
-| Image dedup (service layer) | `image_service.py`, `image_validator.py`, `ai_review.py` | ✅ Done |
-| Bulk dedup fix (site 1) | DB direct update via script | ✅ Done — 19 unique photos |
-| Code quality: `import json` at module level | `ai_review.py` | ✅ Done |
-| Architecture.jsx v3 | `Architecture.jsx` | ✅ Done |
-| End-of-session audit | `REVIEW.md`, `CLAUDE.md` | ✅ Done |
+| Dark mode persistence fix | `frontend/src/context/ThemeContext.jsx` | ✅ Done |
+| `ApiUsageLog` ORM model | `app/models/api_usage_log.py`, `app/models/__init__.py` | ✅ Done |
+| Alembic migration `c3d4e5f6a7b8` | `alembic/versions/c3d4e5f6a7b8_add_api_usage_log_table.py` | ✅ Applied |
+| `usage_service.py` log helper | `app/services/usage_service.py` | ✅ Done |
+| `GET /admin/api-usage` route | `app/routes/admin/api_usage.py`, `main.py` | ✅ Done |
+| Service instrumentation (6 services) | `ai_review.py`, `image_service.py`, `scraper.py`, `logo_service.py`, `trends_service.py` | ✅ Done |
+| `ApiUsage.jsx` frontend dashboard | `frontend/src/apps/admin/ApiUsage.jsx`, `App.jsx`, `AdminLayout.jsx` | ✅ Done |
 
 ### Current known issues / state
 
-- **Site 1 (Shih Tzu):** All 19 published articles now have unique images. Article 13 ("סרגל נגישות אתר" — accessibility bar) is off-topic content that slipped through with a high score; may want to manually review/remove.
-- **Logo quality:** SDXL logos at 1536×640 are reasonable but not pixel-perfect banners. Upgrading to DALL-E 3 (supports arbitrary sizes, true 4:1) would give better results when `OPENAI_API_KEY` is available.
+- **API Usage dashboard shows zeros** until new API calls are made post-migration. Trigger a scrape job or AI review to start populating `api_usage_log`. Historical calls before this session are not backfilled.
+- **Site 1 (Shih Tzu):** Article 13 ("סרגל נגישות אתר") is off-topic; may want to manually remove.
+- **Logo quality:** SDXL logos at 1536×640 are reasonable. Upgrading to DALL-E 3 would give proper 4:1 banner ratio.
 - **No rate limiting** on `/analytics/track`, `/auth/login`, `/auth/register` — acceptable for dev, required before production.
 - **No DOMPurify** on client-side `dangerouslySetInnerHTML` — acceptable for dev, required before production.
 - **5 sites** in DB: Shih Tzu (id=1, Hebrew RTL), Bonsai (id=2, English), White Noise Hub (id=3, English), Geometric small tattoo (id=4, English), Giulia Vecchio Central (id=5, English).
 
 ### Exact next steps to continue from
 
-1. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
+1. Run a scrape job to populate `api_usage_log` and verify the API Costs dashboard shows live data
 2. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
-3. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
-4. Run `alembic revision --autogenerate -m "add db indexes"` and add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
-5. Before production: add slowapi rate limiting, DOMPurify, set `VITE_API_URL` in `frontend/.env.production`, update CORS origins in `main.py`
+3. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
+4. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
+5. Run `alembic revision --autogenerate -m "add db indexes"` and add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
+6. Before production: add slowapi rate limiting, DOMPurify, set `VITE_API_URL` in `frontend/.env.production`, update CORS origins in `main.py`

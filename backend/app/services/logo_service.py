@@ -37,6 +37,8 @@ from typing import Optional
 
 import httpx
 
+from app.services.usage_service import log_api_call
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -317,6 +319,8 @@ async def generate_logo(
         logger.info(
             "generate_logo: AI logo ready for %r (%d base64 chars)", site_name, len(b64)
         )
+        log_api_call("stability_ai", "text_to_image", success=True,
+                     meta={"site": site_name, "width": 1536, "height": 640})
         return f"data:image/png;base64,{b64}"
 
     except Exception as exc:
@@ -325,4 +329,6 @@ async def generate_logo(
             site_name,
             exc,
         )
+        log_api_call("stability_ai", "text_to_image", success=False,
+                     meta={"site": site_name, "error": type(exc).__name__})
         return _generate_svg_fallback(site_name, primary_color, secondary_color, kws)
