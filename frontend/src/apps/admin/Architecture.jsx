@@ -21,6 +21,7 @@
  */
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useTheme } from '../../context/ThemeContext'
 import api from '../../api/client'
@@ -340,7 +341,7 @@ function StatsBar() {
     { label: 'Pending',    value: articleStats?.by_status?.pending ?? '—',         color: isDark ? 'text-amber-400' : 'text-amber-600' },
     { label: 'Templates',  value: 5,                                                color: isDark ? 'text-sky-400' : 'text-sky-600' },
     { label: 'Workers',    value: 4,                                                color: isDark ? 'text-purple-400' : 'text-purple-600' },
-    { label: 'Settings',   value: 9,                                                color: isDark ? 'text-gray-400' : 'text-gray-500' },
+    { label: 'Settings',   value: 21,                                               color: isDark ? 'text-gray-400' : 'text-gray-500' },
   ]
 
   return (
@@ -645,6 +646,7 @@ function ArchTab() {
                 '/admin/users',
                 '/admin/images/audit',
                 '/admin/api-usage (cost dashboard)',
+                '/admin/docs/{filename}   # docs viewer',
                 '/analytics (track · read)',
               ].map(r => <div key={r} className={routeStyle}>{r}</div>)}
             </div>
@@ -676,10 +678,10 @@ function ArchTab() {
               <div className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${isDark ? 'text-indigo-400' : 'text-indigo-400'}`}>Background Workers</div>
               <div className="space-y-1">
                 {[
-                  ['scrape_worker',  'every 60s — runs due ScrapeJobs'],
-                  ['review_worker',  'every 30s — AI reviews pending articles'],
-                  ['trends_worker',  'interval from PlatformSettings'],
-                  ['image_worker',   'startup + every 6h — validates & fixes images'],
+                  ['scrape_worker',  'interval from PlatformSettings — runs due ScrapeJobs'],
+                  ['review_worker',  'interval from PlatformSettings — AI reviews pending'],
+                  ['trends_worker',  'interval from PlatformSettings — fetches trends'],
+                  ['image_worker',   'startup + interval from PlatformSettings — validates images'],
                 ].map(([name, desc]) => (
                   <div key={name} className={svcStyle}>
                     <div className={svcName}>{name}</div>
@@ -724,19 +726,31 @@ function ArchTab() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <div className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${isDark ? 'text-purple-400' : 'text-purple-500'}`}>
-              Settings (9 keys)
+              Settings (21 keys)
             </div>
             <div className="grid grid-cols-2 gap-1">
               {[
-                ['ai_review_threshold',       'float · auto-publish gate'],
-                ['auto_publish_enabled',      'bool · master switch'],
-                ['max_searches_per_job',      'int · scraper URL limit'],
-                ['min_paragraph_blocks',      'int · quality gate'],
-                ['min_word_count',            'int · quality gate'],
-                ['trends_fetch_interval_hrs', 'int · worker sleep cycle'],
-                ['trends_auto_site_limit',    'int · site-creation cap'],
-                ['trends_auto_site_threshold','float · score gate'],
-                ['admin_theme_default',       'string · light | dark'],
+                ['ai_review_threshold',            'float · auto-publish gate'],
+                ['auto_publish_enabled',           'bool · master switch'],
+                ['max_searches_per_job',           'int · scraper URL limit'],
+                ['min_paragraph_blocks',           'int · quality gate'],
+                ['min_word_count',                 'int · quality gate'],
+                ['trends_fetch_interval_hours',    'int · trends worker sleep'],
+                ['trends_auto_site_limit',         'int · site-creation cap'],
+                ['trends_auto_site_threshold',     'float · score gate (enforced)'],
+                ['admin_theme_default',            'string · light | dark'],
+                ['scraper_tavily_max_results',     'int · Tavily results/job'],
+                ['scraper_google_max_results',     'int · Google CSE results/job'],
+                ['scrape_worker_interval_seconds', 'int · scrape loop sleep'],
+                ['ai_review_input_char_limit',     'int · article truncation'],
+                ['ai_review_max_tokens',           'int · Claude output cap'],
+                ['default_images_per_site',        'int · curated image slots'],
+                ['image_max_candidate_pages',      'int · Unsplash pages tried'],
+                ['image_worker_interval_hours',    'int · image worker sleep'],
+                ['image_audit_max_articles',       'int · audit run ceiling'],
+                ['trends_per_region',              'int · trends per region'],
+                ['trends_default_scrape_freq_m',   'int · new site job frequency'],
+                ['review_worker_interval_seconds', 'int · review loop sleep'],
               ].map(([key, desc]) => (
                 <div key={key} className={`rounded px-2 py-1 ${isDark ? 'bg-purple-950/50 border border-purple-800' : 'bg-white border border-purple-100'}`}>
                   <div className={`text-[9px] font-mono font-semibold ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>{key}</div>
@@ -883,6 +897,216 @@ function ArchTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Guidelines tab — reference cards for all project guidance systems
+// ---------------------------------------------------------------------------
+
+const SLASH_COMMANDS = [
+  { name: '/scrape',     desc: 'Trigger a scrape job; shows new articles and auto-publish results' },
+  { name: '/review',     desc: 'Show pending articles by site/score; approve or reject interactively' },
+  { name: '/newsite',    desc: 'Guided wizard: create site, scrape job, and renderer config' },
+  { name: '/stats',      desc: 'Full platform statistics: articles, scores, job status, analytics' },
+  { name: '/deploy',     desc: 'AWS deployment checklist and status assessment' },
+  { name: '/trends',     desc: "Show today's trending topics by region; dismiss or create sites" },
+  { name: '/api-costs',  desc: 'Cost summary from api_usage_log — per-service spend this month' },
+  { name: '/refactor',   desc: 'Scan frontend/src/ for duplicate components; auto-refactor on confirm' },
+]
+
+function GuidelinesTab() {
+  const { isDark } = useTheme()
+  const [viewingDoc, setViewingDoc] = useState(null)  // null | 'CLAUDE.md' | 'REVIEW.md'
+
+  const { data: docData, isLoading: docLoading, isError: docError } = useQuery({
+    queryKey: ['admin-doc', viewingDoc],
+    queryFn:  () => api.get(`/admin/docs/${viewingDoc}`).then(r => r.data),
+    enabled:  !!viewingDoc,
+    staleTime: 5 * 60_000,
+  })
+
+  const card = isDark
+    ? 'bg-gray-800 border border-gray-700 rounded-2xl p-4 shadow-sm'
+    : 'bg-white border border-gray-200 rounded-2xl p-4 shadow-sm'
+  const cardTitle  = isDark ? 'text-sm font-semibold text-gray-100'  : 'text-sm font-semibold text-gray-900'
+  const cardDesc   = isDark ? 'text-xs text-gray-400 mt-1.5 leading-snug' : 'text-xs text-gray-500 mt-1.5 leading-snug'
+  const pill       = isDark
+    ? 'text-[10px] bg-gray-700 border border-gray-600 rounded px-1.5 py-0.5 text-gray-300 font-mono'
+    : 'text-[10px] bg-gray-100 border border-gray-200 rounded px-1.5 py-0.5 text-gray-600 font-mono'
+  const viewBtn    = 'mt-3 text-xs font-medium text-indigo-500 hover:text-indigo-400 transition-colors'
+
+  return (
+    <div className="max-w-4xl space-y-5">
+
+      {/* Row 1 — Project docs */}
+      <div className="grid grid-cols-2 gap-4">
+
+        {/* CLAUDE.md */}
+        <div className={card}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">📘</span>
+            <span className={cardTitle}>CLAUDE.md</span>
+            <span className={pill}>source of truth</span>
+          </div>
+          <p className={cardDesc}>
+            Project source of truth — working rules, architecture overview, API reference,
+            completed features, and next steps. Read fully before every task.
+          </p>
+          <button className={viewBtn} onClick={() => setViewingDoc('CLAUDE.md')}>
+            View →
+          </button>
+        </div>
+
+        {/* REVIEW.md */}
+        <div className={card}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🔍</span>
+            <span className={cardTitle}>REVIEW.md</span>
+            <span className={pill}>audit log</span>
+          </div>
+          <p className={cardDesc}>
+            Running code review log — security findings, technical debt, and session audit
+            notes appended after every Claude Code session (Working Rule 2).
+          </p>
+          <button className={viewBtn} onClick={() => setViewingDoc('REVIEW.md')}>
+            View →
+          </button>
+        </div>
+      </div>
+
+      {/* Row 2 — Slash commands */}
+      <div className={card}>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-lg">⚡</span>
+          <span className={cardTitle}>.claude/commands/</span>
+          <span className={pill}>8 commands</span>
+        </div>
+        <p className={cardDesc}>
+          Custom Claude Code slash commands — invoke with /name at the start of any session.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {SLASH_COMMANDS.map(({ name, desc }) => (
+            <div
+              key={name}
+              className={`rounded-lg px-2.5 py-2
+                ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-gray-50 border border-gray-100'}`}
+            >
+              <div className={`text-xs font-mono font-semibold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+                {name}
+              </div>
+              <div className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                {desc}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Row 3 — Config systems */}
+      <div className="grid grid-cols-3 gap-4">
+
+        {/* backend/.env */}
+        <div className={card}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🔑</span>
+            <span className={cardTitle}>backend/.env</span>
+          </div>
+          <p className={cardDesc}>
+            Secret environment variables — API keys, DATABASE_URL, SECRET_KEY, and all
+            service credentials.  Never committed to git.
+          </p>
+          <div className={`mt-3 inline-flex items-center gap-1 text-[10px] rounded px-1.5 py-0.5 font-medium
+            ${isDark ? 'bg-amber-900/40 border border-amber-700 text-amber-300' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+            ⚠️ not viewable — security
+          </div>
+        </div>
+
+        {/* config.py */}
+        <div className={card}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⚙️</span>
+            <span className={cardTitle}>app/config.py</span>
+          </div>
+          <p className={cardDesc}>
+            Pydantic Settings class — declares all env var names, types, and defaults.
+            Update here whenever a new environment variable is added (Working Rule 3).
+          </p>
+          <div className={`mt-3 inline-flex items-center gap-1 text-[10px] rounded px-1.5 py-0.5 font-medium
+            ${isDark ? 'bg-sky-900/40 border border-sky-700 text-sky-300' : 'bg-sky-50 border border-sky-200 text-sky-700'}`}>
+            infrastructure config
+          </div>
+        </div>
+
+        {/* PlatformSettings */}
+        <div className={card}>
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🗄️</span>
+            <span className={cardTitle}>PlatformSettings</span>
+          </div>
+          <p className={cardDesc}>
+            Runtime-editable parameters in the platform_settings DB table — 21 keys across
+            6 groups.  Editable without server restart via the Settings page.
+          </p>
+          <Link
+            to="/admin/settings"
+            className="mt-3 block text-xs font-medium text-indigo-500 hover:text-indigo-400 transition-colors"
+          >
+            Go to Settings →
+          </Link>
+        </div>
+      </div>
+
+      {/* Doc viewer modal */}
+      {viewingDoc && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+          onClick={() => setViewingDoc(null)}
+        >
+          <div
+            className={`w-full max-w-4xl h-[80vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl
+              ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-white border border-gray-200'}`}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className={`flex items-center justify-between px-5 py-3.5 border-b shrink-0
+              ${isDark ? 'border-gray-700' : 'border-gray-200'}`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-base">{viewingDoc === 'CLAUDE.md' ? '📘' : '🔍'}</span>
+                <span className={`text-sm font-semibold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
+                  {viewingDoc}
+                </span>
+              </div>
+              <button
+                onClick={() => setViewingDoc(null)}
+                className={`text-xs font-medium px-2 py-1 rounded transition-colors
+                  ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto p-5">
+              {docLoading && (
+                <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Loading…</p>
+              )}
+              {docError && (
+                <p className="text-sm text-red-500">Failed to load file. Is the backend running?</p>
+              )}
+              {docData && (
+                <pre className={`text-xs leading-relaxed whitespace-pre-wrap font-mono
+                  ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
+                >
+                  {docData.content}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -899,6 +1123,7 @@ export default function AdminArchitecture() {
   const TABS = [
     { key: 'flow',         label: '⬇ Flow' },
     { key: 'architecture', label: '⬛ Architecture' },
+    { key: 'guidelines',   label: '📋 Guidelines' },
   ]
 
   return (
@@ -938,6 +1163,7 @@ export default function AdminArchitecture() {
       {/* Tab panels */}
       {activeTab === 'flow'         && <FlowTab />}
       {activeTab === 'architecture' && <ArchTab />}
+      {activeTab === 'guidelines'   && <GuidelinesTab />}
     </div>
   )
 }

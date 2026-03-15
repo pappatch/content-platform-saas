@@ -51,6 +51,7 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 8. **Never drop or recreate the DB** — always use `alembic upgrade head`.
 9. **Reusability first** — before writing any new component or function, search the codebase for existing similar code. Any component used in more than one place must live in `/components/` (frontend) or `/services/` (backend). Changes to shared components must be tested across all consumers.
 10. **Git discipline** — commit after every completed feature or fix with a descriptive message. Format: `feat:` / `fix:` / `chore:` / `refactor:` prefix. Always run `git push` after commit. Never leave uncommitted changes at end of session.
+11. **Configuration discipline** — any value that affects business logic, cost, or content quality must live in PlatformSettings (runtime, editable by admin via UI). Infrastructure safety constants (timeouts, max body size, rate limits) stay as code constants. Never add new hardcoded business logic values without first checking if they belong in PlatformSettings.
 
 ---
 
@@ -318,6 +319,7 @@ GET        /settings              # list all platform settings (admin)
 PATCH      /settings/{key}        # update one setting (admin, validates value_type)
 
 GET        /admin/api-usage       # per-service usage + cost stats from api_usage_log (admin)
+GET        /admin/docs/{filename} # serve CLAUDE.md or REVIEW.md content (admin; strict allowlist)
 
 GET|PATCH  /admin/users
 POST       /admin/images/audit    # scan + fix broken/missing article images (admin)
@@ -433,6 +435,8 @@ GET        /analytics
 - **Review nav reorganization** (2026-03-15): `ReviewLayout.jsx` sidebar refactored to `NAV_SECTIONS` with REVIEW section — Pending Queue ✅ (NavLink /review), Published 📰 (→/cms/articles?status=published external), Removed 🗑️ (→/cms/articles?status=removed external)
 - **Editor's Pick toggle in ArticleDetail** (2026-03-15): `ArticleDetail.jsx` — replaced raw "Pin" checkbox card with "Editor's Pick" sidebar card; `PinModal` component inlined (same duration picker as in Articles.jsx); when not pinned: "⭐ Set as Editor's Pick" indigo button; when pinned: amber highlight card showing "📌 Featured" + expiry date + "Unpin" button; `pinUntilMut` sends `PATCH` with both `is_pinned` and `pinned_until`; modal closes on success via `onSuccess` callback
 - **Reusability refactor** (2026-03-15): extracted 5 shared items from page-level duplicates → `components/AiScoreBadge.jsx` (was in 4 files, `midThreshold` prop), `components/StatusBadge.jsx` (2 files), `components/PinModal.jsx` + exported `PIN_DURATIONS` (2 files; `pinLabel` prop), `utils/formatDate.js` (4 files; `showTime`/`showYear` opts); `apps/review/ConfirmDialog.jsx` deleted — `review/Dashboard.jsx` now imports from `components/ConfirmDialog` (z bumped to z-[60] to float above preview modal); Working Rule 9 added to CLAUDE.md; `/refactor` slash command created
+- **Working Rule #11 — Configuration discipline** (2026-03-15): business-logic values → PlatformSettings; infrastructure safety constants stay as code. Added to CLAUDE.md.
+- **Architecture Guidelines tab** (2026-03-15): third tab "📋 Guidelines" added to `Architecture.jsx` — cards for CLAUDE.md, REVIEW.md, .claude/commands/ (all 8 slash commands), backend/.env, app/config.py, PlatformSettings (DB); "View" buttons for CLAUDE.md/REVIEW.md fetch content via `GET /admin/docs/{filename}` and show in a scrollable modal; `GET /admin/docs/{filename}` backend route (admin only, strict filename allowlist: CLAUDE.md + REVIEW.md only); stats bar Settings 9 → 21; ArchTab workers updated to show "interval from PlatformSettings"; ArchTab settings grid expanded to 21 keys
 - **Hardcoded constants → PlatformSettings** (2026-03-15): all P0 + P1 constants migrated to `settings_service.py DEFAULTS` (12 new keys); all workers (`scrape_worker`, `review_worker`, `image_worker`) read interval from settings on each loop iteration so admin changes take effect without restart; `scraper.py` Tavily/Google result limits now from settings; `ai_review.py` input char limit + max tokens now from settings; `image_service.py` max candidate pages now from settings; `images.py` audit hard cap kept at 1000 (Query param ceiling), effective limit = `min(limit, settings_service.get("image_audit_max_articles"))`; `trends_service.py` per-region count + default scrape frequency now from settings; `trends_auto_site_threshold` dead setting wired into `create_site_from_trend()` — rejects trends below threshold before site limit check; `Settings.jsx` GROUPS reorganized from 5 → 6 sections: AI & Content Quality, Scraper, Images, Trends, Workers, Interface
 
 ### 🔲 Next Steps (priority order)
@@ -546,6 +550,9 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | `defaultImages.js` simplified | `site-renderer/src/utils/defaultImages.js` — removed Tier 2+3, returns null | ✅ Done |
 | `ArticleCard.jsx` null-image handling | `site-renderer/src/components/ArticleCard.jsx` — colour placeholder + admin Edit link | ✅ Done |
 | Hardcoded constants → PlatformSettings | `settings_service.py`, `scraper.py`, `ai_review.py`, `image_worker.py`, `review_worker.py`, `scrape_worker.py`, `image_service.py`, `images.py`, `trends_service.py`, `sites.py`, `Settings.jsx` | ✅ Done |
+| Working Rule #11 | `CLAUDE.md` | ✅ Done |
+| `GET /admin/docs/{filename}` route | `app/routes/admin/docs.py`, `main.py` | ✅ Done |
+| Architecture Guidelines tab | `Architecture.jsx` — GuidelinesTab, modal, stats bar 9→21, ArchTab keys 9→21 | ✅ Done |
 
 ### Current known issues / state
 
@@ -561,7 +568,8 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 
 1. Open each site in the admin Site modal → Default Images → "✦ Auto-fill empty" to ensure all 5 sites have curated default images
 2. Run a scrape job to populate `api_usage_log` and verify the API Costs dashboard shows live data
-3. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
+3. Architecture → Guidelines tab → View CLAUDE.md and REVIEW.md to confirm the docs route works correctly
+4. Add bulk CMS actions: `PATCH /cms/articles/bulk` backend endpoint + checkbox UI in `Articles.jsx`
 4. Upgrade logo generation to DALL-E 3 if `OPENAI_API_KEY` is provided — change `logo_service.py` AI call; dimensions can then be true 800×200
 5. Add social media trend sources (Twitter/X or Reddit) as additional inputs alongside Google Trends RSS
 6. Run `alembic revision --autogenerate -m "add db indexes"` and add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`

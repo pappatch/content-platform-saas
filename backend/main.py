@@ -17,6 +17,7 @@ from app.routes.public.public import router as public_router
 from app.routes.admin.users import router as admin_users_router
 from app.routes.admin.images import router as admin_images_router
 from app.routes.admin.api_usage import router as admin_api_usage_router
+from app.routes.admin.docs import router as admin_docs_router
 from app.workers.scrape_worker import worker_loop
 from app.workers.review_worker import review_worker_loop
 from app.workers.trends_worker import trends_worker_loop
@@ -97,6 +98,7 @@ app.include_router(public_router)
 app.include_router(admin_users_router)
 app.include_router(admin_images_router)
 app.include_router(admin_api_usage_router)
+app.include_router(admin_docs_router)
 app.include_router(trends_router)
 app.include_router(settings_router)
 

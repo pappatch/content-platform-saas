@@ -496,3 +496,43 @@ The new comprehensive Rule 2 mandates REVIEW.md, Architecture.jsx, and slash com
 **Rating: GOOD with well-understood gaps**
 
 The refactor reduces duplication risk — previously, a bug fix to `AiScoreBadge` needed to be applied to 4 files; now it is applied once. The reusability rule (Working Rule 9) and `/refactor` command institutionalise this going forward. Outstanding production blockers unchanged (R1, R2, R3).
+
+---
+
+## Session Audit — March 15, 2026 (continued)
+
+**Scope:** Working Rule #11, `GET /admin/docs/{filename}` route, Architecture Guidelines tab
+
+### Security Review
+
+**docs.py — path traversal prevention: SAFE**
+- Strict filename allowlist (`{"CLAUDE.md", "REVIEW.md"}`) checked before any file I/O
+- File path constructed from `Path(__file__).parents[4]` (compile-time constant), not from user input
+- No directory traversal possible; `filename` can only match two known strings or gets 404
+- Route requires `require_admin` — unauthenticated access blocked
+- File read wrapped in try/except; `FileNotFoundError` → 404, other errors → 500 with no detail leakage
+
+**Architecture.jsx modal — XSS: SAFE**
+- Doc content rendered inside `<pre>{docData.content}</pre>` (text node), not `dangerouslySetInnerHTML`
+- No HTML injection possible regardless of CLAUDE.md / REVIEW.md contents
+
+### Code Quality Observations
+
+**Q19 — `parents[4]` index is fragile**
+`Path(__file__).resolve().parents[4]` is correct for the current file at
+`backend/app/routes/admin/docs.py` (4 levels to project root). If this file is ever moved,
+the index must be updated. Low risk (admin-only, tests would catch a wrong path), but worth
+a comment — which is present in the file.
+
+**Q20 — GuidelinesTab query enabled guard**
+`useQuery` with `enabled: !!viewingDoc` correctly prevents a fetch when no doc is selected.
+`staleTime: 5 * 60_000` avoids redundant re-fetches when the modal is reopened for the same file.
+
+**Q21 — Working Rule #11 added retroactively**
+The rule formalises a pattern already in use (PlatformSettings migration). Good — explicit rules
+prevent future regressions. No code change required.
+
+### Updated Overall Assessment
+
+**Rating: GOOD — docs route is a minimal, well-secured read-only endpoint.**
+Outstanding production blockers unchanged (R1 rate limiting, R2 DOMPurify, R3 CORS origins).
