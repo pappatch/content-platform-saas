@@ -47,9 +47,10 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 4. **Keep services modular** — each service file has a single responsibility.
 5. **All errors must be caught and logged** — never crash background workers.
 6. **Auto-publish threshold is 0.5** — articles with `ai_score < 0.5` stay `pending` for editor review; articles scoring ≥ 0.5 are auto-published.
-7. **Reject = PATCH status=removed, not DELETE** — articles are soft-deleted for audit trail.
+7. **Soft-delete only** — never use DELETE to remove articles or sites. Always use `PATCH status=removed` (articles) or `PATCH is_active=false` (sites) to preserve audit trail. Hard DELETE is reserved only for test data cleanup.
 8. **Never drop or recreate the DB** — always use `alembic upgrade head`.
 9. **Reusability first** — before writing any new component or function, search the codebase for existing similar code. Any component used in more than one place must live in `/components/` (frontend) or `/services/` (backend). Changes to shared components must be tested across all consumers.
+10. **Git discipline** — commit after every completed feature or fix with a descriptive message. Format: `feat:` / `fix:` / `chore:` / `refactor:` prefix. Always run `git push` after commit. Never leave uncommitted changes at end of session.
 
 ---
 
