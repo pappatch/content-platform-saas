@@ -11,6 +11,12 @@
  */
 
 /**
+ * Generic fallback keywords used by SiteContext when no site-specific scrape
+ * keywords, category names, or tagline words are available.
+ */
+export const DEFAULT_KEYWORDS = ['nature', 'landscape', 'city', 'people', 'travel']
+
+/**
  * Return a default image URL for a given article, or null if no stored images
  * are available.
  *
