@@ -551,6 +551,7 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | Working Rule #11 | `CLAUDE.md` — configuration discipline: business-logic values → PlatformSettings; infrastructure constants stay as code | ✅ Done |
 | `GET /admin/docs/{filename}` | `routes/admin/docs.py`, `main.py` — serves CLAUDE.md or REVIEW.md; strict allowlist; admin only | ✅ Done |
 | Architecture Guidelines tab | `Architecture.jsx` — `GuidelinesTab` with 6 cards (CLAUDE.md+REVIEW.md viewable via modal, commands list, .env, config.py, PlatformSettings link); stats bar 9→21; ArchTab settings 9→21 keys; all 4 workers show "interval from PlatformSettings" | ✅ Done |
+| **Architecture Flow — interactive security layer** | `Architecture.jsx` — 8 clickable `FlowStep` nodes replace static badges; each expands to show file, description, and concrete attack/defence example; `StepDetail` extended with `file` + `example` fields | ✅ Done |
 
 ### Current known issues / state
 

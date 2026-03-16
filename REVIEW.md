@@ -536,3 +536,37 @@ prevent future regressions. No code change required.
 
 **Rating: GOOD — docs route is a minimal, well-secured read-only endpoint.**
 Outstanding production blockers unchanged (R1 rate limiting, R2 DOMPurify, R3 CORS origins).
+
+---
+
+## Session Audit — 2026-03-16
+
+**Scope:** Interactive security layer in Architecture.jsx Flow tab
+
+### Security Review
+
+**StepDetail `file` / `example` fields — no injection risk: SAFE**
+Both fields are rendered as React text nodes (`{detail.file}`, `{detail.example}`),
+not `dangerouslySetInnerHTML`. Values come from the hardcoded `STEP_DETAILS` constant
+in the same file, never from user or API input.
+
+**Security node descriptions — accuracy check: CORRECT**
+- SSRF: RFC-1918 + loopback + IPv6 link-local all blocked in `validate_url()` ✓
+- JWT "none" algorithm: pinned via `algorithms=[settings.algorithm]` ✓
+- bcrypt: passlib, constant-time verify ✓
+- RBAC: role forced to viewer on self-register; server-side on every request ✓
+- Pydantic: 422 on validation failure before any business logic ✓
+- Rate limiting: 2s per-domain delay via `_last_fetch_time` dict ✓
+- SQLAlchemy ORM: all queries parameterised ✓
+- XSS sanitizer: tag denylist in `sanitize_html()` ✓
+
+### Code Quality
+
+**Q22 — SecurityBadge component now unused**
+`SecurityBadge` is still defined in Architecture.jsx (used in the ArchTab layer, not
+the Flow tab). It remains needed — no dead code introduced.
+
+**Q23 — Security node color ("red") visibility in light mode**
+The red FlowStep nodes use `bg-red-50 border-red-200 text-red-900` in light mode.
+Readable and distinct. Dark mode uses `bg-red-900/60 border-red-500 text-red-200`.
+Both are legible.

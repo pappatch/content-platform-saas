@@ -14,7 +14,7 @@
  *  - Dark / light mode via ThemeContext (toggle in AdminLayout nav bar).
  *  - Stats bar: live platform metrics from the API.
  *  - Clickable Flow nodes: click any step to see a detail card below the diagram.
- *  - Security badges in the Backend layer.
+ *  - Interactive Security layer: 8 clickable nodes each showing file, description, and a concrete example.
  *  - No external diagram libraries — pure React + Tailwind CSS.
  *
  * Mounted at /admin/architecture (admin role).
@@ -102,6 +102,56 @@ const STEP_DETAILS = {
   'cms-review': {
     title: 'CMS · Review app',
     body:  'Editors and admins log in at port 5173. The Review tab shows pending articles sortable by score, with full content preview, AI flags, and approve/reject actions. Approve = PATCH status=published; Reject = PATCH status=removed (soft delete).',
+  },
+
+  // Security nodes
+  'sec-ssrf': {
+    title: 'SSRF Protection',
+    file:  'app/services/scraper.py — validate_url()',
+    body:  'Every URL fetched by the scraper is resolved to an IP address and rejected if it falls inside RFC-1918 private ranges (10.x, 172.16–31.x, 192.168.x), loopback (127.x), or IPv6 link-local/ULA blocks. Scheme is also whitelisted to http/https only.',
+    example: 'Request to http://192.168.1.1/secret → blocked before any network call.',
+  },
+  'sec-jwt': {
+    title: 'JWT Authentication',
+    file:  'app/security/auth.py — create_access_token / decode_access_token',
+    body:  'All write routes (and most read routes) require a valid JWT in the Authorization header. Tokens are signed with HS256 using SECRET_KEY from env. Algorithm is pinned — the "none" algorithm attack is prevented by passing algorithms=[settings.algorithm] to PyJWT.',
+    example: 'Missing or expired token → 401 Unauthorized before route handler runs.',
+  },
+  'sec-xss': {
+    title: 'XSS Sanitizer',
+    file:  'app/utils/sanitize.py — sanitize_html()',
+    body:  'All article content_html is passed through a denylist sanitizer before being saved. Blocked tags include <script>, <iframe>, <object>, <embed>, <svg>, <math>, <meta>, <link>, <template>, and event-handler attributes (on*). Uses html.parser — no external lib dependency.',
+    example: '<script>alert(1)</script> in scraped content → stripped before DB write.',
+  },
+  'sec-bcrypt': {
+    title: 'bcrypt Passwords',
+    file:  'app/security/auth.py — hash_password / verify_password',
+    body:  'All user passwords are hashed with bcrypt (passlib, 12 rounds) before storage. Plain-text passwords are never written to the database or logged. Login uses constant-time comparison via passlib.verify to prevent timing attacks.',
+    example: 'POST /auth/register → password field stored as $2b$12$... hash, never in plain text.',
+  },
+  'sec-rbac': {
+    title: 'Role-Based Access',
+    file:  'app/security/permissions.py — require_admin / require_editor',
+    body:  'Three roles: admin (full access), editor (CMS + review), viewer (read-only). Route dependencies enforce roles server-side on every request — the JWT role claim is verified, not trusted from the request body. Self-registration is forced to viewer regardless of what is sent.',
+    example: 'Editor calling DELETE /admin/users → 403 Forbidden from require_admin dependency.',
+  },
+  'sec-pydantic': {
+    title: 'Input Validation',
+    file:  'app/schemas/ — Pydantic v2 models on every route',
+    body:  'Every API endpoint uses a Pydantic request model. Types, lengths, and allowed values are validated before any business logic runs. FastAPI returns a structured 422 Unprocessable Entity with field-level error details on any validation failure.',
+    example: 'POST /sites with template_id="invalid" → 422 before DB is touched.',
+  },
+  'sec-ratelimit': {
+    title: 'Per-Domain Rate Limit',
+    file:  'app/services/scraper.py — _last_fetch_time dict',
+    body:  'The scraper enforces a minimum 2-second gap between successive requests to the same domain using a module-level dict keyed by hostname. This prevents hammering individual news sources and reduces the chance of getting IP-blocked during bulk scrape runs.',
+    example: 'Two articles from bbc.com in one job → second fetch waits at least 2s.',
+  },
+  'sec-sqli': {
+    title: 'SQL Injection Protection',
+    file:  'SQLAlchemy ORM — used throughout all services and routes',
+    body:  'All database queries use SQLAlchemy ORM methods (db.query(...).filter(...)) or Core expressions with bound parameters. Raw SQL strings are never interpolated. SQLAlchemy passes all values as parameterized placeholders, making SQL injection structurally impossible.',
+    example: 'GET /cms/articles?site_id=1 OR 1=1 → ORM binds "1 OR 1=1" as a literal value, not SQL.',
   },
 }
 
@@ -309,9 +359,22 @@ function StepDetail({ stepId, onClose }) {
           ✕
         </button>
       </div>
+      {detail.file && (
+        <p className={`text-[10px] font-mono mt-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+          {detail.file}
+        </p>
+      )}
       <p className={`text-xs mt-1.5 leading-relaxed ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
         {detail.body}
       </p>
+      {detail.example && (
+        <div className={`mt-2.5 rounded-lg px-3 py-2 text-[10px] font-mono leading-snug
+          ${isDark ? 'bg-gray-900 text-gray-400 border border-gray-700' : 'bg-gray-50 text-gray-500 border border-gray-200'}`}
+        >
+          <span className={`font-semibold mr-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>e.g.</span>
+          {detail.example}
+        </div>
+      )}
     </div>
   )
 }
@@ -551,24 +614,37 @@ function FlowTab() {
         </div>
       </div>
 
-      {/* ── Security badges row ── */}
-      <div className={`mt-4 rounded-xl border p-3 flex flex-wrap gap-2
-        ${isDark ? 'border-gray-700 bg-gray-800/40' : 'border-gray-200 bg-gray-50'}`}
+      {/* ── Security layer (interactive nodes) ── */}
+      <div className={`mt-6 rounded-2xl border-2 p-4
+        ${isDark ? 'border-red-900 bg-red-950/20' : 'border-red-100 bg-red-50/50'}`}
       >
-        <span className={`text-[10px] font-bold uppercase tracking-widest self-center mr-1
-          ${isDark ? 'text-gray-400' : 'text-gray-400'}`}
+        <div className={`text-[10px] font-bold uppercase tracking-widest mb-3
+          ${isDark ? 'text-red-400' : 'text-red-500'}`}
         >
-          Security
-        </span>
-        {[
-          'JWT + bcrypt auth',
-          'Role-based access',
-          'SSRF protection',
-          'HTML sanitizer (XSS)',
-          'Pydantic v2 validation',
-          'Alembic schema migrations',
-          'API keys via env vars only',
-        ].map(label => <SecurityBadge key={label} label={label} />)}
+          Security Layer — click any control for details
+        </div>
+        <div className="flex flex-wrap gap-2 justify-start">
+          {[
+            { id: 'sec-ssrf',      icon: '🛡️', title: 'SSRF Protection',       sub: 'scraper.py' },
+            { id: 'sec-jwt',       icon: '🔐', title: 'JWT Auth',               sub: 'security/auth.py' },
+            { id: 'sec-xss',       icon: '🧹', title: 'XSS Sanitizer',          sub: 'utils/sanitize.py' },
+            { id: 'sec-bcrypt',    icon: '🔑', title: 'bcrypt Passwords',        sub: 'security/auth.py' },
+            { id: 'sec-rbac',      icon: '👤', title: 'Role-Based Access',       sub: 'security/permissions.py' },
+            { id: 'sec-pydantic',  icon: '✅', title: 'Input Validation',        sub: 'app/schemas/' },
+            { id: 'sec-ratelimit', icon: '⏱️', title: 'Per-Domain Rate Limit',   sub: 'scraper.py' },
+            { id: 'sec-sqli',      icon: '🗄️', title: 'SQL Injection Guard',     sub: 'SQLAlchemy ORM' },
+          ].map(({ id, icon, title, sub }) => (
+            <FlowStep
+              key={id}
+              id={id}
+              color="red"
+              icon={icon}
+              title={title}
+              sub={sub}
+              {...stepProps}
+            />
+          ))}
+        </div>
       </div>
     </div>
   )
