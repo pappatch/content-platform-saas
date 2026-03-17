@@ -24,3 +24,9 @@ Read CLAUDE.md fully, then perform the following:
 
 Note: POST endpoints require authentication. If you don't have a JWT token,
 ask the user to provide one or log in via `POST /auth/login`.
+
+---
+
+**Related skills:**
+- `/doc-sync` — after creating a new site from a trend, run doc-sync to update CLAUDE.md "Current Sites" table and Architecture.jsx stats
+- `/image-fix [site_id]` — after the first scrape job runs for a trend-created site, fix any off-topic or missing article images

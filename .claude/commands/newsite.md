@@ -68,3 +68,13 @@ Show a summary table of what was created:
 - Scrape job ID, keywords, frequency
 - Renderer URL
 - Remind user to update the Local Dev Ports table in CLAUDE.md
+
+## Step 6 — Post-creation sync
+
+Run `/doc-sync` to automatically:
+- Add the new site to CLAUDE.md "Current Sites" table
+- Update the Local Dev Ports table with the new renderer port
+- Update Architecture.jsx stats bar (Sites count)
+- Append a REVIEW.md entry confirming the new site was created with correct auth and config
+
+Then run `/image-fix [new_site_id]` once the first scrape job has run to ensure all initial articles have topic-specific images.

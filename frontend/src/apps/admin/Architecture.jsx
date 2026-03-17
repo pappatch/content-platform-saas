@@ -5,9 +5,16 @@
  * ----
  *  Flow         End-to-end data flow with clickable steps for detail panels.
  *               Trends pipeline (left) + Content pipeline (right).
+ *               Inline security badges appear at relevant flow steps (SSRF on
+ *               scrape_worker, XSS/SQL on articles-pending, JWT on score gate,
+ *               RBAC on CMS review) — clicking them opens the security detail card.
  *
- *  Architecture 6-layer system diagram: External Services → Backend →
- *               Platform Settings → Frontend Apps → Site Renderer → Database.
+ *  Architecture 7-layer system diagram: External Services → Backend →
+ *               Security Layer (collapsible) → Platform Settings →
+ *               Frontend Apps → Site Renderer → Database.
+ *
+ *  Guidelines   Reference cards: CLAUDE.md, REVIEW.md, slash commands, config
+ *               systems, and Security Guidelines (8 invariants + last audit date).
  *
  * Features
  * --------
@@ -15,6 +22,9 @@
  *  - Stats bar: live platform metrics from the API.
  *  - Clickable Flow nodes: click any step to see a detail card below the diagram.
  *  - Interactive Security layer: 8 clickable nodes each showing file, description, and a concrete example.
+ *  - Inline security badges at relevant flow steps link to the security detail panel.
+ *  - Architecture tab Security Layer: collapsible card with all 8 controls (file + what it protects).
+ *  - Guidelines tab Security Guidelines card: 8 invariants, last audit date, link to REVIEW.md.
  *  - No external diagram libraries — pure React + Tailwind CSS.
  *
  * Mounted at /admin/architecture (admin role).
@@ -254,8 +264,9 @@ function Diamond({ id, title, sub, onSelect, selected }) {
   )
 }
 
-function LayerBox({ label, color = 'gray', children }) {
+function LayerBox({ label, color = 'gray', collapsible = false, children }) {
   const { isDark } = useTheme()
+  const [collapsed, setCollapsed] = useState(false)
 
   const border = isDark ? {
     indigo: 'border-indigo-700 bg-indigo-950/40',
@@ -263,6 +274,7 @@ function LayerBox({ label, color = 'gray', children }) {
     green:  'border-emerald-700 bg-emerald-950/40',
     amber:  'border-amber-700  bg-amber-950/40',
     purple: 'border-purple-700 bg-purple-950/40',
+    red:    'border-red-800    bg-red-950/30',
     gray:   'border-gray-700   bg-gray-800/40',
   } : {
     indigo: 'border-indigo-200 bg-indigo-50/60',
@@ -270,6 +282,7 @@ function LayerBox({ label, color = 'gray', children }) {
     green:  'border-emerald-200 bg-emerald-50/60',
     amber:  'border-amber-200  bg-amber-50/60',
     purple: 'border-purple-200 bg-purple-50/60',
+    red:    'border-red-200    bg-red-50/40',
     gray:   'border-gray-200   bg-gray-50/60',
   }
   const header = isDark ? {
@@ -278,6 +291,7 @@ function LayerBox({ label, color = 'gray', children }) {
     green:  'text-emerald-400',
     amber:  'text-amber-400',
     purple: 'text-purple-400',
+    red:    'text-red-400',
     gray:   'text-gray-400',
   } : {
     indigo: 'text-indigo-600',
@@ -285,14 +299,26 @@ function LayerBox({ label, color = 'gray', children }) {
     green:  'text-emerald-600',
     amber:  'text-amber-600',
     purple: 'text-purple-600',
+    red:    'text-red-600',
     gray:   'text-gray-500',
   }
   return (
     <div className={`border-2 rounded-2xl p-4 ${border[color]}`}>
-      <div className={`text-[10px] font-bold uppercase tracking-widest mb-3 ${header[color]}`}>
-        {label}
+      <div className="flex items-center justify-between mb-3">
+        <div className={`text-[10px] font-bold uppercase tracking-widest ${header[color]}`}>
+          {label}
+        </div>
+        {collapsible && (
+          <button
+            onClick={() => setCollapsed(c => !c)}
+            className={`text-[10px] font-medium px-2 py-0.5 rounded transition-colors
+              ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-700' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+          >
+            {collapsed ? '▶ expand' : '▼ collapse'}
+          </button>
+        )}
       </div>
-      {children}
+      {!collapsed && children}
     </div>
   )
 }
@@ -306,6 +332,35 @@ function LayerArrow() {
         <div className={`text-sm leading-none ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>▼</div>
       </div>
     </div>
+  )
+}
+
+/**
+ * SecMini — tiny inline security tag.
+ * Clicking it selects the corresponding security node in the detail panel,
+ * exactly like clicking the full node in the security bar at the bottom.
+ */
+function SecMini({ secId, onSelect, selected }) {
+  const { isDark } = useTheme()
+  const detail = STEP_DETAILS[secId]
+  if (!detail) return null
+  const isActive = selected === secId
+  return (
+    <button
+      onClick={() => onSelect(secId === selected ? null : secId)}
+      title={detail.title}
+      className={`text-[9px] px-1.5 py-0.5 rounded-full border font-medium transition-all
+        ${isActive
+          ? isDark
+            ? 'bg-red-800 border-red-500 text-red-100'
+            : 'bg-red-100 border-red-400 text-red-800'
+          : isDark
+            ? 'bg-red-950/40 border-red-800 text-red-400 hover:border-red-600 hover:bg-red-900/40'
+            : 'bg-red-50 border-red-200 text-red-600 hover:border-red-400 hover:bg-red-100'
+        }`}
+    >
+      🔒 {detail.title}
+    </button>
   )
 }
 
@@ -498,12 +553,20 @@ function FlowTab() {
             title="scrape_worker" sub="every 60s · keyword search → HTML fetch"
             wide {...stepProps}
           />
+          <div className="flex gap-1 my-0.5">
+            <SecMini secId="sec-ssrf"      onSelect={sel} selected={selected} />
+            <SecMini secId="sec-ratelimit" onSelect={sel} selected={selected} />
+          </div>
           <Down label="max_searches_per_job · SSRF guard · quality gates" />
 
           <FlowStep id="articles-pending" color="gray" icon="📝"
             title="Articles" sub="status: pending · content_html"
             wide {...stepProps}
           />
+          <div className="flex gap-1 my-0.5">
+            <SecMini secId="sec-xss"  onSelect={sel} selected={selected} />
+            <SecMini secId="sec-sqli" onSelect={sel} selected={selected} />
+          </div>
           <Down />
 
           <FlowStep id="review-worker" color="purple" icon="⏰"
@@ -524,6 +587,10 @@ function FlowTab() {
             sub="PlatformSettings: ai_review_threshold"
             onSelect={sel} selected={selected}
           />
+          <div className="flex gap-1 my-0.5">
+            <SecMini secId="sec-jwt"  onSelect={sel} selected={selected} />
+            <SecMini secId="sec-rbac" onSelect={sel} selected={selected} />
+          </div>
 
           {/* Two branches */}
           <div className="flex items-start gap-8 mt-2">
@@ -549,6 +616,10 @@ function FlowTab() {
               <FlowStep id="stays-pending" color="amber" icon="🕐" title="stays pending" sub="score &lt; threshold" {...stepProps} />
               <Down />
               <FlowStep id="cms-review" color="indigo" icon="📋" title="CMS · Review app" sub="port 5173 · editor/admin" {...stepProps} />
+              <div className="flex gap-1 my-0.5">
+                <SecMini secId="sec-jwt"  onSelect={sel} selected={selected} />
+                <SecMini secId="sec-rbac" onSelect={sel} selected={selected} />
+              </div>
               <Down label="approve or reject" />
               <div className="flex items-start gap-3 mt-1">
                 <Node color="green" icon="✅" title="published" sub="PATCH status=published" />
@@ -797,6 +868,73 @@ function ArchTab() {
 
       <LayerArrow />
 
+      {/* 🔒 Security Layer */}
+      <LayerBox
+        label="🔒 Security Layer — cross-cutting protections applied across all backend routes and services"
+        color="red"
+        collapsible
+      >
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            {
+              icon: '🛡️', name: 'SSRF Protection',
+              file: 'app/services/scraper.py — validate_url()',
+              protects: 'Blocks requests to RFC-1918 (10.x, 192.168.x, 172.16–31.x), loopback, and IPv6 link-local/ULA before any network call. Scheme whitelisted to http/https only.',
+            },
+            {
+              icon: '🔐', name: 'JWT Authentication',
+              file: 'app/security/auth.py — create/decode_access_token',
+              protects: 'Signs tokens with HS256 + SECRET_KEY from env. Algorithm pinned — "none" algorithm attack impossible. Expiry enforced; expired tokens return 401 before route handler runs.',
+            },
+            {
+              icon: '🧹', name: 'XSS Sanitizer',
+              file: 'app/utils/sanitize.py — sanitize_html()',
+              protects: 'Denylist strips <script>, <iframe>, <svg>, <math>, <meta>, <template>, event handlers (on*), javascript: URLs, and srcdoc attributes from all scraped content_html before DB write.',
+            },
+            {
+              icon: '🔑', name: 'bcrypt Passwords',
+              file: 'app/security/auth.py — hash_password / verify_password',
+              protects: 'All passwords hashed with bcrypt (passlib, 12 rounds) — plain text never stored or logged. Login uses constant-time passlib.verify to prevent timing-based enumeration.',
+            },
+            {
+              icon: '👤', name: 'Role-Based Access',
+              file: 'app/security/permissions.py — require_admin / require_editor',
+              protects: 'Three roles: admin, editor, viewer. Enforced server-side on every request via route dependencies. Self-registration is hard-coded to viewer regardless of request body.',
+            },
+            {
+              icon: '✅', name: 'Input Validation',
+              file: 'app/schemas/ — Pydantic v2 on every route',
+              protects: 'Type, length, and enum constraints validated before any business logic runs. FastAPI returns structured 422 Unprocessable Entity with field-level errors on any mismatch.',
+            },
+            {
+              icon: '⏱️', name: 'Per-Domain Rate Limit',
+              file: 'app/services/scraper.py — _last_fetch_time dict',
+              protects: '2-second minimum gap between successive requests to the same hostname. Prevents the scraper from hammering news sources and reduces IP-block risk during bulk scrape runs.',
+            },
+            {
+              icon: '🗄️', name: 'SQL Injection Guard',
+              file: 'SQLAlchemy ORM — all services and routes',
+              protects: 'All DB queries use ORM methods with bound parameters. No raw SQL string interpolation found anywhere. SQLAlchemy passes all values as parameterized placeholders.',
+            },
+          ].map(({ icon, name, file, protects }) => (
+            <div
+              key={name}
+              className={`rounded-xl px-3 py-2.5 border
+                ${isDark ? 'bg-red-950/40 border-red-800' : 'bg-white border-red-100'}`}
+            >
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-sm">{icon}</span>
+                <span className={`text-[10px] font-semibold leading-tight ${isDark ? 'text-red-300' : 'text-red-700'}`}>{name}</span>
+              </div>
+              <div className={`text-[9px] font-mono mb-1.5 leading-snug ${isDark ? 'text-red-500' : 'text-red-400'}`}>{file}</div>
+              <div className={`text-[9px] leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{protects}</div>
+            </div>
+          ))}
+        </div>
+      </LayerBox>
+
+      <LayerArrow />
+
       {/* 3 — Platform Settings */}
       <LayerBox label="3 · Platform Settings — admin-configurable runtime parameters" color="purple">
         <div className="grid grid-cols-2 gap-4">
@@ -987,6 +1125,13 @@ const SLASH_COMMANDS = [
   { name: '/refactor',   desc: 'Scan frontend/src/ for duplicate components; auto-refactor on confirm' },
 ]
 
+const SKILLS = [
+  { name: '/code-review',      desc: 'Scan changed files for quality and security issues; report by severity; auto-fix critical' },
+  { name: '/doc-sync',         desc: 'Sync CLAUDE.md, REVIEW.md, Architecture.jsx, and commands to match current code' },
+  { name: '/image-fix',        desc: '/image-fix [site_id] — fix missing/broken/duplicate/off-topic article images via Unsplash' },
+  { name: '/session-handoff',  desc: 'End-of-session wrap-up: verify rules, ensure git clean, update Last Session Summary' },
+]
+
 function GuidelinesTab() {
   const { isDark } = useTheme()
   const [viewingDoc, setViewingDoc] = useState(null)  // null | 'CLAUDE.md' | 'REVIEW.md'
@@ -1047,32 +1192,68 @@ function GuidelinesTab() {
         </div>
       </div>
 
-      {/* Row 2 — Slash commands */}
-      <div className={card}>
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-lg">⚡</span>
-          <span className={cardTitle}>.claude/commands/</span>
-          <span className={pill}>8 commands</span>
-        </div>
-        <p className={cardDesc}>
-          Custom Claude Code slash commands — invoke with /name at the start of any session.
-        </p>
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          {SLASH_COMMANDS.map(({ name, desc }) => (
-            <div
-              key={name}
-              className={`rounded-lg px-2.5 py-2
-                ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-gray-50 border border-gray-100'}`}
-            >
-              <div className={`text-xs font-mono font-semibold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
-                {name}
+      {/* Row 2 — Slash commands + Skills */}
+      <div className="grid grid-cols-2 gap-4">
+
+        {/* Commands */}
+        <div className={card}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg">⚡</span>
+            <span className={cardTitle}>.claude/commands/</span>
+            <span className={pill}>8 commands</span>
+          </div>
+          <p className={cardDesc}>
+            Custom Claude Code slash commands — invoke with /name at the start of any session.
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-2">
+            {SLASH_COMMANDS.map(({ name, desc }) => (
+              <div
+                key={name}
+                className={`rounded-lg px-2.5 py-2
+                  ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-gray-50 border border-gray-100'}`}
+              >
+                <div className={`text-xs font-mono font-semibold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+                  {name}
+                </div>
+                <div className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {desc}
+                </div>
               </div>
-              <div className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                {desc}
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
+
+        {/* Skills */}
+        <div className={card}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-lg">🔧</span>
+            <span className={cardTitle}>.claude/skills/</span>
+            <span className={pill}>4 skills</span>
+          </div>
+          <p className={cardDesc}>
+            Reusable automation skills — invoke with /skill-name. Use instead of writing ad-hoc instructions (Working Rule 13).
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-2">
+            {SKILLS.map(({ name, desc }) => (
+              <div
+                key={name}
+                className={`rounded-lg px-2.5 py-2
+                  ${isDark ? 'bg-gray-900 border border-indigo-800' : 'bg-indigo-50/50 border border-indigo-100'}`}
+              >
+                <div className={`text-xs font-mono font-semibold ${isDark ? 'text-indigo-400' : 'text-indigo-600'}`}>
+                  {name}
+                </div>
+                <div className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {desc}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className={`mt-3 text-[10px] leading-snug ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+            Hooks: <span className={`font-mono ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>pre-task.md · post-task.md · pre-commit.md</span> — follow these before/after every task and commit.
+          </div>
+        </div>
+
       </div>
 
       {/* Row 3 — Config systems */}
@@ -1126,6 +1307,56 @@ function GuidelinesTab() {
           >
             Go to Settings →
           </Link>
+        </div>
+      </div>
+
+      {/* Row 4 — Security Guidelines */}
+      <div className={card}>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">🔒</span>
+            <span className={cardTitle}>Security Guidelines</span>
+            <span className={pill}>8 invariants</span>
+          </div>
+          <button
+            className="text-xs font-medium text-indigo-500 hover:text-indigo-400 transition-colors"
+            onClick={() => setViewingDoc('REVIEW.md')}
+          >
+            View REVIEW.md →
+          </button>
+        </div>
+        <p className={cardDesc}>
+          Security invariants confirmed safe in the last audit (2026-03-16). All new routes must
+          satisfy these checks before merging — Working Rule 2 mandates a security review after
+          every session.
+        </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {[
+            { icon: '🔐', name: 'JWT "none" attack',  detail: 'algorithms=[settings.algorithm] — algorithm pinned to HS256; "none" bypass structurally impossible' },
+            { icon: '🔑', name: 'API key exposure',   detail: 'All keys via pydantic-settings from .env — never hardcoded, never logged, never returned to frontend' },
+            { icon: '🛡️', name: 'SSRF',               detail: 'validate_url() resolves hostname; blocks RFC-1918, loopback, link-local IPv6 before any HTTP call' },
+            { icon: '🗄️', name: 'SQL injection',      detail: 'SQLAlchemy ORM parameterized queries throughout — zero raw SQL string interpolation found' },
+            { icon: '🌐', name: 'CORS',                detail: 'Locked to localhost:5173–5177 in dev — add production domains to allow_origins before deploying' },
+            { icon: '🔒', name: 'Auth coverage',       detail: 'All non-public routes use get_current_user / require_admin / require_editor dependency' },
+            { icon: '⚙️', name: 'Worker safety',       detail: 'Inner loops wrapped in try/except Exception + logger.exception — one bad article cannot crash workers' },
+            { icon: '👤', name: 'Self-registration',   detail: 'Role forced to viewer on POST /auth/register — request body role field is silently overridden' },
+          ].map(({ icon, name, detail }) => (
+            <div
+              key={name}
+              className={`rounded-lg px-2.5 py-2
+                ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-red-50/50 border border-red-100'}`}
+            >
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span>{icon}</span>
+                <span className={`text-xs font-semibold ${isDark ? 'text-red-300' : 'text-red-700'}`}>{name}</span>
+              </div>
+              <div className={`text-[10px] leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{detail}</div>
+            </div>
+          ))}
+        </div>
+        <div className={`mt-3 inline-flex items-center gap-1.5 text-[10px] rounded px-2 py-1
+          ${isDark ? 'bg-emerald-900/40 border border-emerald-700 text-emerald-300' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+          ✅ Last audit: 2026-03-16 · Rating: GOOD with well-understood gaps · Open issues: R1 (rate limiting) · R2 (DOMPurify) · R3 (CORS prod)
         </div>
       </div>
 

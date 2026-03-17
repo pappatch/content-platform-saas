@@ -570,3 +570,114 @@ the Flow tab). It remains needed — no dead code introduced.
 The red FlowStep nodes use `bg-red-50 border-red-200 text-red-900` in light mode.
 Readable and distinct. Dark mode uses `bg-red-900/60 border-red-500 text-red-200`.
 Both are legible.
+
+---
+
+## Session Audit — 2026-03-16 (continued)
+
+**Scope:** Security visibility enhancement across all Architecture.jsx tabs —
+Architecture tab Security Layer, Guidelines tab Security Guidelines card,
+Flow tab inline security badges.
+
+### Security Review
+
+**LayerBox collapsible prop — no injection risk: SAFE**
+- `collapsible` is a boolean prop with no user input path. State lives in the component.
+- The collapse toggle only controls `!collapsed && children` rendering. No auth bypass possible.
+
+**SecMini component — no injection risk: SAFE**
+- Reads `STEP_DETAILS[secId]` — both `secId` and the entire `STEP_DETAILS` constant are
+  hardcoded in the same file, never from user/API input.
+- `detail.title` rendered as React text node (not `dangerouslySetInnerHTML`).
+- Click handler calls `onSelect(secId === selected ? null : secId)` — pure UI state mutation.
+
+**Security Layer in ArchTab — accuracy check: CORRECT**
+- All 8 item descriptions accurately reflect the live implementation as audited in prior sessions.
+- `protects` field content is factual (RFC-1918 ranges, passlib rounds, ORM parameterization).
+- Rendered as React text nodes — no injection vector.
+
+**Security Guidelines card in GuidelinesTab — no new attack surface: SAFE**
+- Pure static JSX — no API calls, no external data. Strings are hardcoded.
+- "View REVIEW.md →" button calls `setViewingDoc('REVIEW.md')` which triggers the existing
+  `useQuery(['admin-doc', 'REVIEW.md'])` — same path already audited (Session 5, path traversal
+  prevention confirmed safe).
+- Last audit date (2026-03-16) and open issues (R1, R2, R3) are accurate.
+
+**Inline SecMini badges in FlowTab — no new surface: SAFE**
+- All four badge placements (scrape-worker, articles-pending, score-gate, cms-review) reference
+  existing STEP_DETAILS keys — no new code paths opened.
+- Clicking a badge calls `sel(secId)` which sets `selected` state → renders `StepDetail` (existing
+  component, already audited).
+
+### Code Quality Observations
+
+**Q24 — LayerBox `mb-3` moved to flex wrapper**
+Previously the `mb-3` margin was on the inner label div. It now lives on the outer
+`flex items-center justify-between mb-3` wrapper. Visually identical for non-collapsible callers.
+No layout regression.
+
+**Q25 — SecMini "🔒" prefix on title may be redundant**
+The badge already lives inside a red-coloured pill. The lock emoji is added for clarity but
+makes very long titles (e.g. "Per-Domain Rate Limit") wrap on small screens. Acceptable at
+the current viewport; a min-width constraint could prevent wrapping if needed.
+
+**Q26 — Security Layer defaults to expanded**
+`LayerBox` initializes `collapsed = false`, so the Security Layer is always open on first render.
+This is the right default — the layer should be visible immediately. Power users can collapse it.
+
+### Updated Overall Assessment
+
+**Rating: GOOD with well-understood gaps**
+
+Security is now surfaced at three levels: inline in the data flow (where each control fires),
+as a dedicated Architecture layer (file + protection scope for each control), and as a Guidelines
+card (audit invariants + last-review date). No new backend routes, no new API calls, no new
+external data sources. Outstanding production blockers unchanged (R1, R2, R3).
+
+---
+
+## Session Audit — 2026-03-17
+
+**Scope:** Automation layer — hooks (pre-task, post-task, pre-commit), skills (code-review, doc-sync, image-fix, session-handoff), CLAUDE.md Working Rules 1/2/10 updated + Rule 13 added, all 8 commands updated, Architecture.jsx GuidelinesTab updated with skills card.
+
+### Security Review
+
+No new routes or external services added — no security review required.
+
+**Hook/skill files — no injection risk: SAFE**
+- All hook and skill files are markdown instruction documents. They contain no executable code, no API calls, and no sensitive data.
+- They are read by Claude Code as instructions, not executed as shell scripts.
+- The `pre-commit.md` checklist references `git diff --cached` shell commands — these are read-only inspection commands with no write side effects.
+
+**CLAUDE.md Working Rule updates — no security impact: SAFE**
+- Rules 1, 2, 10 now reference hook files. This adds process constraints, not new code paths.
+- Rule 13 documents available skills. No new code deployed.
+
+**Architecture.jsx SKILLS constant — no injection risk: SAFE**
+- `SKILLS` array is hardcoded in the same file as `SLASH_COMMANDS`. Values are rendered as React text nodes.
+- The new Skills card in GuidelinesTab uses the same styling pattern as the commands card — no new API calls, no `dangerouslySetInnerHTML`.
+
+### Code Quality Observations
+
+**Q27 — Commands card layout changed from 2-column to 1-column grid**
+The `/commands` card moved from `grid-cols-2` to `grid-cols-1` to match the new 2-column outer layout (commands + skills side by side). Each command now occupies a full row within its card. This improves readability since command descriptions are now full-width.
+
+**Q28 — Row 2 in GuidelinesTab now a grid of 2 cards**
+Previously Row 2 was a single full-width commands card. It is now a `grid grid-cols-2 gap-4` containing the commands card and the new skills card. This is consistent with the Row 1 (CLAUDE.md + REVIEW.md) and Row 3 (env + config.py + PlatformSettings) layout patterns.
+
+**Q29 — `SKILLS` constant placed after `SLASH_COMMANDS`**
+Both constants are at module level, before the `GuidelinesTab` component. Consistent placement — no ordering issue.
+
+### New Recommendations
+
+**R19 — Hook files are not mechanically enforced**
+The hooks in `.claude/hooks/` are markdown instructions that rely on Claude Code reading and following them. They are not shell hooks (`pre-commit` in `.git/hooks/`). The pre-commit checklist could be partially enforced by adding a `.git/hooks/pre-commit` shell script that runs the grep checks for hardcoded keys and empty files. Low priority for a single-developer project but worthwhile before onboarding other contributors.
+
+**R20 — Skill files discovery**
+New Claude Code sessions load `CLAUDE.md` but do not automatically discover `.claude/skills/`. Rule 13 in CLAUDE.md explicitly lists the available skills, so a new session reading CLAUDE.md fully will know about them. No change needed — Rule 13 is the index.
+
+### Updated Overall Assessment
+
+**Rating: GOOD with well-understood gaps**
+
+The automation layer formalises the session discipline that was already being followed informally. All new files are documentation/instruction only — no new code paths, no new attack surface. The mechanical enforcement gap (R19) is acceptable for a single-developer project. Outstanding production blockers unchanged (R1, R2, R3).

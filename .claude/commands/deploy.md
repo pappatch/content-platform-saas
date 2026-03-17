@@ -59,3 +59,9 @@ If nothing is deployed yet, suggest this order:
 6. Update DNS for each site domain
 
 Offer to help implement any of these steps if the user asks.
+
+---
+
+**Related skills:**
+- `/code-review` — run before deploying to catch any lingering hardcoded values, missing error handling, or broken imports that would cause production issues
+- `/session-handoff` — run at the end of a deployment session to document what was deployed, what is still pending, and the exact state of the environment

@@ -20,3 +20,8 @@ Read CLAUDE.md fully, then perform the following:
 5. After any approve/reject action, confirm how many articles were updated and show the new pending count.
 
 Note: PATCH endpoints require authentication. If you don't have a JWT token, ask the user to provide one or log in via `POST /auth/login` with their editor/admin credentials.
+
+---
+
+**Related skills:**
+- `/image-fix [site_id]` — if approved articles have missing or broken images, run this to fix them before they appear on the public site

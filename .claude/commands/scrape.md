@@ -22,3 +22,9 @@ If the backend server is not running, tell the user to start it first:
 cd backend && source .venv/bin/activate
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+---
+
+**Related skills:**
+- `/image-fix [site_id]` — if the new articles have missing or off-topic images, run this after the scrape to fix them in bulk
+- `/doc-sync` — if this scrape job revealed new article patterns or errors that affect architecture notes, run doc-sync to update CLAUDE.md and REVIEW.md

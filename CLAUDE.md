@@ -30,19 +30,21 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 | `/api-costs` | Cost summary report from api_usage_log — calls and estimated spend per service for current month |
 | `/refactor` | Scan `frontend/src/` for duplicate components, copy-pasted logic, and misplaced shared code; auto-refactor on confirmation |
 
+**Skills** (reusable — invoke with `/skill-name`):
+
+| Skill | Description |
+|-------|-------------|
+| `/code-review` | Scan changed files for quality/security issues; report by severity; auto-fix critical |
+| `/doc-sync` | Sync CLAUDE.md, REVIEW.md, Architecture.jsx, and commands to match current code |
+| `/image-fix [site_id]` | Fix missing/broken/duplicate/off-topic article images for a site via Unsplash |
+| `/session-handoff` | End-of-session wrap-up: verify rules, ensure git clean, update Last Session Summary, print handoff block |
+
 ---
 
 ## Working Rules
 
-1. **Always read CLAUDE.md before starting any task.**
-2. **After every task, mandatory updates to ALL of the following:**
-   - **(1) CLAUDE.md** — mark completed items in the Completed section; update the Architecture section if structure changed; update the API Reference if routes were added/modified; update the Data Model if ORM models changed; update Next Steps to reflect remaining work.
-   - **(2) REVIEW.md** — append any new code findings, security observations, or technical debt identified during the task (even if minor). Never skip this even for small tasks.
-   - **(3) Architecture.jsx** — reflect any new services, routes, models, or frontend components in both the Flow tab and the Architecture tab. Update stat counters and layer descriptions.
-   - **(4) `.claude/commands/`** — update relevant slash commands if new features, routes, or models affect their queries or descriptions.
-   - **(5) Code review** — before finishing any task, scan every changed file for: unused imports, missing error handling, hardcoded values, and security issues (unprotected routes, exposed keys, missing input validation). Fix any critical issues found before committing.
-   - **(6) Security review** — verify every new backend route has the correct auth decorator (`get_current_user` / `require_admin` / `require_editor`); every new external API call has `try/except` and loads keys from `settings`; no sensitive data (keys, tokens, PII) appears in logs or responses.
-   - **This rule applies to every single task without exception and cannot be skipped.**
+1. **Before every task, follow `.claude/hooks/pre-task.md`** — read CLAUDE.md fully, read REVIEW.md last section, check git status, and state the task context aloud (task name, branch, last commit, relevant sections, risk level).
+2. **After every task, follow `.claude/hooks/post-task.md`** — the full post-task checklist covers: (1) code review on changed files (unused imports, hardcoded values, missing error handling); (2) security check (auth decorators, try/except, no keys in logs); (3) update CLAUDE.md (completed, architecture, API reference, data model, next steps, last session summary); (4) update REVIEW.md (append findings — even if "No new findings"); (5) update Architecture.jsx (new services/routes/models/settings); (6) update `.claude/commands/` if affected; (7) commit and push. Use `/code-review` and `/doc-sync` skills to fulfil steps 1–2 and 3–6. **This rule applies to every single task without exception and cannot be skipped.**
 3. **When adding env vars**, update both `config.py` and `.env`.
 4. **Keep services modular** — each service file has a single responsibility.
 5. **All errors must be caught and logged** — never crash background workers.
@@ -50,8 +52,14 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 7. **Soft-delete only** — never use DELETE to remove articles or sites. Always use `PATCH status=removed` (articles) or `PATCH is_active=false` (sites) to preserve audit trail. Hard DELETE is reserved only for test data cleanup.
 8. **Never drop or recreate the DB** — always use `alembic upgrade head`.
 9. **Reusability first** — before writing any new component or function, search the codebase for existing similar code. Any component used in more than one place must live in `/components/` (frontend) or `/services/` (backend). Changes to shared components must be tested across all consumers.
-10. **Git discipline** — commit after every completed feature or fix with a descriptive message. Format: `feat:` / `fix:` / `chore:` / `refactor:` prefix. Always run `git push` after commit. Never leave uncommitted changes at end of session.
+10. **Git discipline** — commit after every completed feature or fix with a descriptive message. Format: `feat:` / `fix:` / `chore:` / `refactor:` prefix. Always run `git push` after commit. Never leave uncommitted changes at end of session. **Before every commit, follow `.claude/hooks/pre-commit.md`** — no hardcoded API keys, no empty files, no broken imports, all new routes have auth decorators, all new external API calls have try/except, Alembic migration exists for any model changes, CLAUDE.md and REVIEW.md are updated.
 11. **Configuration discipline** — any value that affects business logic, cost, or content quality must live in PlatformSettings (runtime, editable by admin via UI). Infrastructure safety constants (timeouts, max body size, rate limits) stay as code constants. Never add new hardcoded business logic values without first checking if they belong in PlatformSettings.
+12. **No empty files** — never create documentation files, directories, or placeholder files without content. If a file is created it must have real content immediately. Empty `DOCS/` files or stub components are forbidden.
+13. **Available skills** — use these reusable skills instead of writing ad-hoc instructions. Invoke with `/skill-name` in any Claude Code session:
+    - `/code-review` — scan changed files for unused imports, hardcoded values, N+1 queries, missing error handling; report by severity (critical/warning/info); auto-fix critical issues
+    - `/doc-sync` — sync CLAUDE.md (completed, architecture, API reference), REVIEW.md (append findings), Architecture.jsx (all layers, flow steps, stats), and `.claude/commands/` (updated queries/descriptions)
+    - `/image-fix [site_id]` — scan all published articles for missing/broken/duplicate/off-topic images; fix using site scrape keywords via Unsplash; report fixed/skipped/failed
+    - `/session-handoff` — update "Last Session Summary" in CLAUDE.md, verify all Working Rules are current, verify git is clean, print a "Ready for next session" block that a new Claude instance can read and immediately continue from
 
 ---
 
@@ -395,6 +403,8 @@ GET        /analytics
 - **`POST /sites/ai-preview` backend**: async route registered before `/{site_id}`; delegates to `generate_site_config(keyword, language)`; returns `SiteConfigPreview`
 - **Settings UI**: `admin_theme_default` renders as `<select>` (light/dark) instead of free-text input; controlled via `SELECT_OPTIONS` map in `Settings.jsx`; save button enabled for select-type settings
 - **Architecture.jsx FlowTab v2**: `FlowStep` component wraps `Node` with `GLOW_SHADOW` box-shadow on active; Trends pipeline moved to horizontal sub-flow bar at bottom; security badges row below flow; detail card still expands below diagram on click
+- **Architecture.jsx security visibility v2** (2026-03-16): (1) Architecture tab — new collapsible `LayerBox color="red"` Security Layer positioned between Backend and Platform Settings; 8 controls each showing icon, name, file, and what it protects; `LayerBox` gains `collapsible` prop and `red` color variant. (2) Guidelines tab — new "🔒 Security Guidelines" card listing all 8 security invariants from REVIEW.md with last audit date (2026-03-16) and open issues badge; "View REVIEW.md →" button links to existing doc viewer. (3) Flow tab — `SecMini` component renders tiny clickable red pills inline at relevant steps: SSRF + Rate Limit on scrape_worker, XSS + SQL Guard on articles-pending, JWT + RBAC on score-gate, JWT + RBAC on CMS review; clicking any badge opens the full security detail card (same StepDetail used by the bottom security bar)
+- **Automation layer** (2026-03-17): `.claude/hooks/pre-task.md` (read CLAUDE.md + REVIEW.md, git status, state task context, classify risk); `.claude/hooks/post-task.md` (code review, security check, update all 4 docs, commit + push); `.claude/hooks/pre-commit.md` (8-point checklist: no keys, no empty files, broken imports, auth decorators, try/except, Alembic migration, CLAUDE.md + REVIEW.md updated); `.claude/skills/code-review.md` (scan changed files, severity report, auto-fix critical); `.claude/skills/doc-sync.md` (sync CLAUDE.md/REVIEW.md/Architecture.jsx/.claude/commands/); `.claude/skills/image-fix.md` (scan and fix article images for a site by site_id); `.claude/skills/session-handoff.md` (verify rules, clean git, update Last Session Summary, print handoff block); Working Rules 1, 2, 10 updated to reference hooks; Rule 13 added for Available Skills; all 8 commands updated to reference relevant skills
 - **`POST /sites/{id}/ai-enrich`**: async route that fills missing tagline/about/default_category_names via Claude Haiku; auto-creates Category rows from result; requires admin; registered before `PATCH /{site_id}`
 - **`GET /sites/{id}/default-images`**: builds keyword list from site name + categories + tagline; calls Unsplash for 5 images; persists to `site.config.default_images`; returns `{site_id, images}`
 - **SiteModal.jsx**: yellow warning banner when editing site with missing tagline/about/categories; "Yes, fill with AI" calls `POST /sites/{id}/ai-enrich`; Default Images section — full 5-slot manager: per-slot thumbnail with hover controls (↺ Replace with Unsplash via DELETE+auto_fill, ✎ Set URL via PATCH, × Remove via DELETE+no_fill); empty slots show +/Auto-fill/Enter URL; top bar has "✦ Auto-fill empty" (POST /fill) and "↻ Refresh all" (GET) buttons; per-slot URL input with Set/✕ inline
@@ -526,13 +536,19 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 
 ## Last Session Summary
 
-**Date:** 2026-03-15
+**Date:** 2026-03-17
 
 ### What was built this session
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Dark mode persistence fix | `context/ThemeContext.jsx` — API default commits to localStorage; effect syncs DOM+storage; no flash on mount | ✅ Done |
+| Architecture security visibility v2 | `Architecture.jsx` — collapsible Security Layer (ArchTab), Security Guidelines card (GuidelinesTab), SecMini inline badges (FlowTab) | ✅ Done |
+| Working Rules 11+12 | `CLAUDE.md` — Rule 11 (configuration discipline), Rule 12 (no empty files) | ✅ Done |
+| Automation layer — hooks | `.claude/hooks/pre-task.md`, `post-task.md`, `pre-commit.md` | ✅ Done |
+| Automation layer — skills | `.claude/skills/code-review.md`, `doc-sync.md`, `image-fix.md`, `session-handoff.md` | ✅ Done |
+| Working Rules 1, 2, 10, 13 updated | `CLAUDE.md` — rules now reference hooks and skills explicitly | ✅ Done |
+| Slash commands updated | All 8 commands reference relevant skills; `/newsite` and `/refactor` gain post-action skill steps | ✅ Done |
+| Architecture.jsx GuidelinesTab — Skills card | `Architecture.jsx` — new skills card alongside commands card; `SKILLS` constant added | ✅ Done |
 | `ApiUsageLog` ORM model + migration | `models/api_usage_log.py`, `models/__init__.py`, migration `c3d4e5f6a7b8` | ✅ Done |
 | `usage_service.py` | `services/usage_service.py` — `log_api_call()` fire-and-forget, never raises | ✅ Done |
 | `GET /admin/api-usage` route | `routes/admin/api_usage.py`, `main.py` — per-service cost + sparkline stats | ✅ Done |
@@ -552,25 +568,20 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | `GET /admin/docs/{filename}` | `routes/admin/docs.py`, `main.py` — serves CLAUDE.md or REVIEW.md; strict allowlist; admin only | ✅ Done |
 | Architecture Guidelines tab | `Architecture.jsx` — `GuidelinesTab` with 6 cards (CLAUDE.md+REVIEW.md viewable via modal, commands list, .env, config.py, PlatformSettings link); stats bar 9→21; ArchTab settings 9→21 keys; all 4 workers show "interval from PlatformSettings" | ✅ Done |
 | **Architecture Flow — interactive security layer** | `Architecture.jsx` — 8 clickable `FlowStep` nodes replace static badges; each expands to show file, description, and concrete attack/defence example; `StepDetail` extended with `file` + `example` fields | ✅ Done |
+| **Architecture security visibility v2** | `Architecture.jsx` — collapsible Security Layer in Architecture tab (8 controls with file+protects); Security Guidelines card in Guidelines tab (8 invariants, last audit date, REVIEW.md link); `SecMini` inline badges in Flow tab at scrape_worker/articles-pending/score-gate/cms-review | ✅ Done |
 
 ### Current known issues / state
 
-- **API Usage dashboard shows zeros** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to start populating it. Pre-session history is not backfilled.
-- **Sites without `default_images`** will show coloured `--color-primary` placeholders for articles missing `main_image_url`. Open each site in admin Site modal → click "✦ Auto-fill empty" to populate all 5 slots.
-- **Site 1 (Shih Tzu) — Article 13** ("סרגל נגישות אתר" — accessibility bar) is off-topic content; scored high enough to auto-publish but unrelated to the site theme. Candidate for manual removal.
-- **Logo quality** — SDXL logos at 1536×640 are functional but not true banner-ratio (target is 800×200 / 4:1). Upgrade to DALL-E 3 when `OPENAI_API_KEY` is available.
-- **No rate limiting** on `/analytics/track`, `/auth/login`, `/auth/register` — fine for dev, required before production (REVIEW.md R1).
-- **No DOMPurify** on client-side `dangerouslySetInnerHTML` — fine for dev, required before production (REVIEW.md R2).
+- **API Usage dashboard shows zeros** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to start populating it.
+- **Sites without `default_images`** will show coloured `--color-primary` placeholders. Run `/image-fix [site_id]` after populating default images via admin Site modal → "✦ Auto-fill empty".
+- **Hook enforcement is manual** — `.claude/hooks/` are instruction documents, not shell hooks. A new Claude session must read CLAUDE.md to discover them (Rule 1 covers this). See REVIEW.md R19.
 - **5 sites in DB** — Shih Tzu (id=1, Hebrew RTL), Bonsai (id=2, English LTR), White Noise Hub (id=3, English), Geometric Tattoo (id=4, English), Giulia Vecchio Central (id=5, English).
-- **PlatformSettings count** — 21 seeded keys; Settings UI shows 6 groups; stats bar and Architecture tab now reflect 21.
 
 ### Exact next steps to continue from
 
-1. Open each site in admin Site modal → Default Images section → "✦ Auto-fill empty" to populate all 5 curated image slots per site
-2. Run a scrape job → confirm API Costs dashboard shows live Tavily + Anthropic call data
-3. Architecture → Guidelines tab → click "View →" on CLAUDE.md and REVIEW.md to confirm `GET /admin/docs/{filename}` works end-to-end
-4. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + checkbox UI in `Articles.jsx` (checkboxes partially exist)
-5. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
-6. **Logo upgrade** — swap `logo_service.py` to DALL-E 3 (`dall-e-3`) if `OPENAI_API_KEY` is provided; supports arbitrary sizes so true 800×200 becomes possible
-7. **Social media trends** — add Twitter/X or Reddit as additional trend sources alongside Google Trends RSS
-8. **Production hardening** — slowapi rate limiting on auth + analytics routes; DOMPurify on `dangerouslySetInnerHTML`; `VITE_API_URL` in `frontend/.env.production`; update CORS origins in `main.py`
+1. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + checkbox UI in `Articles.jsx` (checkboxes partially exist); after building run `/doc-sync`
+2. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
+3. Run a scrape job → confirm API Costs dashboard shows live Tavily + Anthropic call data → run `/image-fix [site_id]` to clean up any off-topic images
+4. **Logo upgrade** — swap `logo_service.py` to DALL-E 3 if `OPENAI_API_KEY` is provided; supports arbitrary sizes so true 800×200 becomes possible
+5. **Production hardening** — slowapi rate limiting on auth + analytics routes (REVIEW.md R1); DOMPurify on `dangerouslySetInnerHTML` (R2); `VITE_API_URL` in `frontend/.env.production`; update CORS origins in `main.py` (R3)
+6. At end of each session, invoke `/session-handoff` to keep this summary current
