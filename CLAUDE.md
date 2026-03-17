@@ -38,6 +38,7 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 | `/doc-sync` | Sync CLAUDE.md, REVIEW.md, Architecture.jsx, and commands to match current code |
 | `/image-fix [site_id]` | Fix missing/broken/duplicate/off-topic article images for a site via Unsplash |
 | `/session-handoff` | End-of-session wrap-up: verify rules, ensure git clean, update Last Session Summary, print handoff block |
+| `/new-project` | Set up a new project with all Claude Code standards: CLAUDE.md, REVIEW.md, .claude/ structure, initial Working Rules |
 
 ---
 
@@ -60,6 +61,36 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
     - `/doc-sync` — sync CLAUDE.md (completed, architecture, API reference), REVIEW.md (append findings), Architecture.jsx (all layers, flow steps, stats), and `.claude/commands/` (updated queries/descriptions)
     - `/image-fix [site_id]` — scan all published articles for missing/broken/duplicate/off-topic images; fix using site scrape keywords via Unsplash; report fixed/skipped/failed
     - `/session-handoff` — update "Last Session Summary" in CLAUDE.md, verify all Working Rules are current, verify git is clean, print a "Ready for next session" block that a new Claude instance can read and immediately continue from
+
+---
+
+## Global Claude Code Configuration (`~/.claude/`)
+
+Universal Claude Code standards that apply to every project, not just this one.
+See the **📐 Standards** tab in the Architecture page for an interactive browser.
+
+```
+~/.claude/
+  CLAUDE.md                     # Universal Working Rules 1–11 + code quality + security invariants
+  hooks/
+    pre-task.md                 # Generic pre-task checklist (read context, git status, risk level)
+    post-task.md                # Generic post-task checklist (code review, docs, commit)
+    pre-commit.md               # Generic pre-commit safety checks (secrets, auth, migrations)
+  skills/
+    code-review.md              # Python + JS/JSX quality checklist with auto-fix table
+    doc-sync.md                 # 6-step sync: CLAUDE.md → REVIEW.md → Architecture → commands
+    image-fix.md                # Article image scan, classify, and fix procedure
+    session-handoff.md          # End-of-session wrap-up and handoff block template
+  commands/
+    pre-task.md                 # Thin wrapper → skills/session-handoff.md pre-task section
+    post-task.md                # Thin wrapper → hooks/post-task.md
+    pre-commit.md               # Thin wrapper → hooks/pre-commit.md
+    code-review.md              # Thin wrapper → skills/code-review.md
+    doc-sync.md                 # Thin wrapper → skills/doc-sync.md
+    image-fix.md                # Thin wrapper → skills/image-fix.md
+    session-handoff.md          # Thin wrapper → skills/session-handoff.md
+    new-project.md              # Full 8-step wizard for new project scaffold
+```
 
 ---
 
@@ -569,6 +600,9 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | Architecture Guidelines tab | `Architecture.jsx` — `GuidelinesTab` with 6 cards (CLAUDE.md+REVIEW.md viewable via modal, commands list, .env, config.py, PlatformSettings link); stats bar 9→21; ArchTab settings 9→21 keys; all 4 workers show "interval from PlatformSettings" | ✅ Done |
 | **Architecture Flow — interactive security layer** | `Architecture.jsx` — 8 clickable `FlowStep` nodes replace static badges; each expands to show file, description, and concrete attack/defence example; `StepDetail` extended with `file` + `example` fields | ✅ Done |
 | **Architecture security visibility v2** | `Architecture.jsx` — collapsible Security Layer in Architecture tab (8 controls with file+protects); Security Guidelines card in Guidelines tab (8 invariants, last audit date, REVIEW.md link); `SecMini` inline badges in Flow tab at scrape_worker/articles-pending/score-gate/cms-review | ✅ Done |
+| **Global `~/.claude/` configuration** | `~/.claude/CLAUDE.md` (universal rules 1–11 + code quality + security); `~/.claude/hooks/` (pre-task, post-task, pre-commit); `~/.claude/skills/` (code-review, doc-sync, image-fix, session-handoff); `~/.claude/commands/` (8 thin wrappers + new-project wizard) | ✅ Done |
+| **`GET /admin/docs/project/` + `/global/`** | `routes/admin/docs.py` — two new routes with strict allowlists serving `.claude/` project files and `~/.claude/` global files; registered before `/{filename}` to avoid path-param conflict | ✅ Done |
+| **Architecture Standards tab** | `Architecture.jsx` — 4th tab `📐 Standards` with `StandardsTab` component; 4 sections: Global Config (~/.claude/), Project Config (.claude/), Working Rules (13 colour-coded cards), New Project Checklist (8 steps); `DocViewModal` shared component; `GLOBAL_CONFIG_FILES`, `PROJECT_CONFIG_FILES`, `WORKING_RULES`, `RULE_COLORS`, `NEW_PROJECT_STEPS` constants | ✅ Done |
 
 ### Current known issues / state
 
@@ -576,12 +610,14 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 - **Sites without `default_images`** will show coloured `--color-primary` placeholders. Run `/image-fix [site_id]` after populating default images via admin Site modal → "✦ Auto-fill empty".
 - **Hook enforcement is manual** — `.claude/hooks/` are instruction documents, not shell hooks. A new Claude session must read CLAUDE.md to discover them (Rule 1 covers this). See REVIEW.md R19.
 - **5 sites in DB** — Shih Tzu (id=1, Hebrew RTL), Bonsai (id=2, English LTR), White Noise Hub (id=3, English), Geometric Tattoo (id=4, English), Giulia Vecchio Central (id=5, English).
+- **Standards tab "View →" buttons** — require backend server running at port 8000; `GET /admin/docs/project/` and `/global/` routes are wired and allowlisted.
 
 ### Exact next steps to continue from
 
-1. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + checkbox UI in `Articles.jsx` (checkboxes partially exist); after building run `/doc-sync`
-2. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
-3. Run a scrape job → confirm API Costs dashboard shows live Tavily + Anthropic call data → run `/image-fix [site_id]` to clean up any off-topic images
-4. **Logo upgrade** — swap `logo_service.py` to DALL-E 3 if `OPENAI_API_KEY` is provided; supports arbitrary sizes so true 800×200 becomes possible
-5. **Production hardening** — slowapi rate limiting on auth + analytics routes (REVIEW.md R1); DOMPurify on `dangerouslySetInnerHTML` (R2); `VITE_API_URL` in `frontend/.env.production`; update CORS origins in `main.py` (R3)
-6. At end of each session, invoke `/session-handoff` to keep this summary current
+1. Open Architecture page → Standards tab → click "View →" on any `~/.claude/` or `.claude/` file to confirm the backend routes work end-to-end
+2. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + checkbox UI in `Articles.jsx` (checkboxes partially exist); after building run `/doc-sync`
+3. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
+4. Run a scrape job → confirm API Costs dashboard shows live Tavily + Anthropic call data → run `/image-fix [site_id]` to clean up any off-topic images
+5. **Logo upgrade** — swap `logo_service.py` to DALL-E 3 if `OPENAI_API_KEY` is provided; supports arbitrary sizes so true 800×200 becomes possible
+6. **Production hardening** — slowapi rate limiting on auth + analytics routes (REVIEW.md R1); DOMPurify on `dangerouslySetInnerHTML` (R2); `VITE_API_URL` in `frontend/.env.production`; update CORS origins in `main.py` (R3)
+7. At end of each session, invoke `/session-handoff` to keep this summary current

@@ -1414,6 +1414,432 @@ function GuidelinesTab() {
 }
 
 // ---------------------------------------------------------------------------
+// Standards tab — global and project config reference
+// ---------------------------------------------------------------------------
+
+// Global ~/.claude/ files
+const GLOBAL_CONFIG_FILES = [
+  {
+    icon: '📘', title: 'CLAUDE.md', path: 'CLAUDE.md',
+    desc: 'Universal working rules, code quality standards, security invariants, and available skills. Loaded automatically in every Claude Code session.',
+  },
+  {
+    icon: '⚡', title: 'commands/new-project.md', path: 'commands/new-project.md',
+    desc: 'Guided wizard: create CLAUDE.md, REVIEW.md, .claude/ structure, and initial commit for any new project.',
+  },
+  {
+    icon: '🔧', title: 'commands/code-review.md', path: 'commands/code-review.md',
+    desc: 'Invoke /code-review to scan changed files, report by severity, and auto-fix critical issues.',
+  },
+  {
+    icon: '📄', title: 'commands/doc-sync.md', path: 'commands/doc-sync.md',
+    desc: 'Invoke /doc-sync to sync CLAUDE.md, review log, architecture diagram, and commands to current code.',
+  },
+  {
+    icon: '🖼️', title: 'commands/image-fix.md', path: 'commands/image-fix.md',
+    desc: 'Invoke /image-fix [site_id] to scan and fix missing/broken/duplicate/off-topic article images.',
+  },
+  {
+    icon: '🤝', title: 'commands/session-handoff.md', path: 'commands/session-handoff.md',
+    desc: 'Invoke /session-handoff to verify rules, clean up git, and print a ready-for-next-session handoff block.',
+  },
+  {
+    icon: '▶', title: 'commands/pre-task.md', path: 'commands/pre-task.md',
+    desc: 'Invoke /pre-task to run the pre-task checklist: read CLAUDE.md, check git, state task context aloud.',
+  },
+  {
+    icon: '✅', title: 'commands/post-task.md', path: 'commands/post-task.md',
+    desc: 'Invoke /post-task to run the post-task checklist: code review, security check, doc sync, commit.',
+  },
+  {
+    icon: '🔒', title: 'commands/pre-commit.md', path: 'commands/pre-commit.md',
+    desc: 'Invoke /pre-commit to run the commit checklist: no secrets, no stubs, auth on all routes, migrations exist.',
+  },
+  {
+    icon: '🪝', title: 'hooks/pre-task.md', path: 'hooks/pre-task.md',
+    desc: 'Pre-task hook instructions: read project context, check git state, classify risk level.',
+  },
+  {
+    icon: '🪝', title: 'hooks/post-task.md', path: 'hooks/post-task.md',
+    desc: 'Post-task hook instructions: code review, security check, update docs, commit and push.',
+  },
+  {
+    icon: '🪝', title: 'hooks/pre-commit.md', path: 'hooks/pre-commit.md',
+    desc: 'Pre-commit hook instructions: full 11-point checklist for security, quality, and docs.',
+  },
+  {
+    icon: '🔧', title: 'skills/code-review.md', path: 'skills/code-review.md',
+    desc: 'Code review skill: per-language check tables, severity definitions, auto-fix rules.',
+  },
+  {
+    icon: '📄', title: 'skills/doc-sync.md', path: 'skills/doc-sync.md',
+    desc: 'Doc sync skill: step-by-step CLAUDE.md, review log, architecture, and commands sync procedure.',
+  },
+  {
+    icon: '🖼️', title: 'skills/image-fix.md', path: 'skills/image-fix.md',
+    desc: 'Image fix skill: classification table, Unsplash search strategy, dedup logic, fix queue.',
+  },
+  {
+    icon: '🤝', title: 'skills/session-handoff.md', path: 'skills/session-handoff.md',
+    desc: 'Session handoff skill: rule verification, git clean check, Last Session Summary update, handoff block.',
+  },
+]
+
+// Project .claude/ files (this project)
+const PROJECT_CONFIG_FILES = [
+  {
+    icon: '🪝', title: 'hooks/pre-task.md', path: 'hooks/pre-task.md',
+    desc: 'Project pre-task hook: reads CLAUDE.md + REVIEW.md last section, git status, states task context with risk classification.',
+  },
+  {
+    icon: '🪝', title: 'hooks/post-task.md', path: 'hooks/post-task.md',
+    desc: '7-step post-task checklist: code review → security check → update 4 docs → commit → push.',
+  },
+  {
+    icon: '🪝', title: 'hooks/pre-commit.md', path: 'hooks/pre-commit.md',
+    desc: '8-point pre-commit checklist with shell commands for secret detection, empty-file checks, auth coverage, and migration verification.',
+  },
+  {
+    icon: '🔧', title: 'skills/code-review.md', path: 'skills/code-review.md',
+    desc: 'Project-tuned code review skill for FastAPI + React: Python and JSX check tables, critical auto-fix rules.',
+  },
+  {
+    icon: '📄', title: 'skills/doc-sync.md', path: 'skills/doc-sync.md',
+    desc: 'Project doc sync: CLAUDE.md (11 sections), REVIEW.md, Architecture.jsx (7 layers), .claude/commands/ (8 files).',
+  },
+  {
+    icon: '🖼️', title: 'skills/image-fix.md', path: 'skills/image-fix.md',
+    desc: 'Project image fix: site_id parameter, Unsplash API via UNSPLASH_ACCESS_KEY, site.config.default_images fallback.',
+  },
+  {
+    icon: '🤝', title: 'skills/session-handoff.md', path: 'skills/session-handoff.md',
+    desc: 'Project session handoff: verifies all 13 Working Rules, updates Last Session Summary, prints structured handoff block.',
+  },
+  {
+    icon: '⚡', title: 'commands/scrape.md', path: 'commands/scrape.md',
+    desc: '/scrape — trigger a scrape job by ID; show new articles summary and auto-publish results.',
+  },
+  {
+    icon: '⚡', title: 'commands/review.md', path: 'commands/review.md',
+    desc: '/review — show pending articles by site/score; approve or reject interactively.',
+  },
+  {
+    icon: '⚡', title: 'commands/newsite.md', path: 'commands/newsite.md',
+    desc: '/newsite — guided wizard to create a new site, scrape job, and renderer config.',
+  },
+  {
+    icon: '⚡', title: 'commands/stats.md', path: 'commands/stats.md',
+    desc: '/stats — full platform statistics: articles, scores, job status, analytics.',
+  },
+  {
+    icon: '⚡', title: 'commands/deploy.md', path: 'commands/deploy.md',
+    desc: '/deploy — AWS deployment checklist and status assessment.',
+  },
+  {
+    icon: '⚡', title: 'commands/trends.md', path: 'commands/trends.md',
+    desc: '/trends — show trending topics by region; dismiss or create sites from trends.',
+  },
+  {
+    icon: '⚡', title: 'commands/api-costs.md', path: 'commands/api-costs.md',
+    desc: '/api-costs — cost summary from api_usage_log — per-service spend this month.',
+  },
+  {
+    icon: '⚡', title: 'commands/refactor.md', path: 'commands/refactor.md',
+    desc: '/refactor — scan frontend/src/ for duplicate components; auto-refactor on confirmation.',
+  },
+]
+
+// Working rules data (color-coded by category)
+const WORKING_RULES = [
+  { n: 1,  cat: 'before-task',   title: 'Pre-task hook',           body: 'Follow .claude/hooks/pre-task.md before every task — read CLAUDE.md fully, check git status, state task context and risk level aloud.' },
+  { n: 2,  cat: 'after-task',    title: 'Post-task hook',          body: 'Follow .claude/hooks/post-task.md after every task — code review, security check, update CLAUDE.md/REVIEW.md/Architecture.jsx/commands, commit and push.' },
+  { n: 3,  cat: 'code-quality',  title: 'Env var discipline',      body: 'When adding env vars, update both config.py and .env. Document the key in CLAUDE.md environment section.' },
+  { n: 4,  cat: 'code-quality',  title: 'Modular services',        body: 'One responsibility per service file. Never mix DB access, business logic, and external API calls in one function.' },
+  { n: 5,  cat: 'code-quality',  title: 'Errors caught & logged',  body: 'All errors must be caught and logged. Background worker inner loops wrapped in try/except Exception + logger.exception().' },
+  { n: 6,  cat: 'data-safety',   title: 'Auto-publish threshold',  body: 'Articles with ai_score < 0.5 stay pending for human review. Articles ≥ 0.5 are auto-published (when auto_publish_enabled=true).' },
+  { n: 7,  cat: 'data-safety',   title: 'Soft-delete only',        body: 'Never hard-delete articles or sites. Use PATCH status=removed (articles) or is_active=false (sites). Hard DELETE is for test cleanup only.' },
+  { n: 8,  cat: 'data-safety',   title: 'Never drop the DB',       body: 'Always use alembic upgrade head. Never call create_all or drop_all. Migration files must be committed alongside model changes.' },
+  { n: 9,  cat: 'code-quality',  title: 'Reusability first',       body: 'Search before writing. Any component or utility used in 2+ places lives in components/ or services/. Changes to shared code tested across all consumers.' },
+  { n: 10, cat: 'git',           title: 'Git discipline',          body: 'Commit after every feature/fix. Format: feat:/fix:/chore:/refactor:. Always push. Follow pre-commit.md before every commit. Never leave uncommitted changes.' },
+  { n: 11, cat: 'code-quality',  title: 'Configuration discipline',body: 'Business-logic values → PlatformSettings (runtime, editable). Infrastructure constants (timeouts, limits) stay as code. No new hardcoded business logic.' },
+  { n: 12, cat: 'code-quality',  title: 'No empty files',          body: 'Never create placeholder files, stub components, or empty docs. Every file must have real content immediately. Empty DOCS/ files are forbidden.' },
+  { n: 13, cat: 'before-task',   title: 'Available skills',        body: 'Use /code-review, /doc-sync, /image-fix, /session-handoff instead of ad-hoc instructions. Invoke with /skill-name in any Claude Code session.' },
+]
+
+const RULE_COLORS = {
+  'before-task':  { ring: 'ring-blue-400',   bg: 'bg-blue-500',   light: 'bg-blue-50 border-blue-200',   dark: 'bg-blue-950/40 border-blue-700',   num: 'text-blue-500',   ndark: 'text-blue-400'  },
+  'after-task':   { ring: 'ring-green-400',  bg: 'bg-green-500',  light: 'bg-green-50 border-green-200', dark: 'bg-green-950/40 border-green-700', num: 'text-green-600',  ndark: 'text-green-400' },
+  'code-quality': { ring: 'ring-purple-400', bg: 'bg-purple-500', light: 'bg-purple-50 border-purple-200', dark: 'bg-purple-950/40 border-purple-700', num: 'text-purple-600', ndark: 'text-purple-400' },
+  'data-safety':  { ring: 'ring-red-400',    bg: 'bg-red-500',    light: 'bg-red-50 border-red-200',     dark: 'bg-red-950/40 border-red-700',     num: 'text-red-600',    ndark: 'text-red-400'   },
+  'git':          { ring: 'ring-amber-400',  bg: 'bg-amber-500',  light: 'bg-amber-50 border-amber-200', dark: 'bg-amber-950/40 border-amber-700', num: 'text-amber-600',  ndark: 'text-amber-400' },
+}
+
+const NEW_PROJECT_STEPS = [
+  { n: 1, icon: '💬', title: 'Gather project info',       body: 'Name, tech stack, primary language, description. Run /new-project to be guided through this interactively.' },
+  { n: 2, icon: '📁', title: 'Create .claude/ structure', body: 'mkdir -p .claude/commands .claude/hooks .claude/skills — three directories for project-specific automation.' },
+  { n: 3, icon: '📘', title: 'Create CLAUDE.md',          body: 'Project source of truth from the standard template: overview, working rules, architecture, env vars, next steps, last session summary.' },
+  { n: 4, icon: '🔍', title: 'Create REVIEW.md',          body: 'Audit log from the standard template: initial entry with "no code yet" baseline and overall assessment.' },
+  { n: 5, icon: '🪝', title: 'Populate hooks',            body: 'Copy or reference ~/.claude/hooks/ — pre-task, post-task, pre-commit. Customise for project-specific checks.' },
+  { n: 6, icon: '🔧', title: 'Populate skills',           body: 'Copy relevant skills from ~/.claude/skills/ — always: code-review, doc-sync, session-handoff. Add image-fix for content projects.' },
+  { n: 7, icon: '⚡', title: 'Create commands',           body: 'Add project-specific slash commands to .claude/commands/ for common operations (scrape, review, stats, deploy, etc.).' },
+  { n: 8, icon: '📝', title: 'Initial git commit',        body: 'git add CLAUDE.md REVIEW.md .claude/ && git commit -m "chore: project scaffold with Claude Code standards"' },
+]
+
+/**
+ * DocViewModal — reusable modal for displaying fetched markdown/text documents.
+ * Used by both GuidelinesTab and StandardsTab to avoid duplication.
+ */
+function DocViewModal({ viewingDoc, onClose, isDark }) {
+  const { data: docData, isLoading, isError } = useQuery({
+    queryKey: ['standards-doc', viewingDoc?.scope, viewingDoc?.path],
+    queryFn: () => {
+      const url = viewingDoc.scope === 'global'
+        ? `/admin/docs/global/${viewingDoc.path}`
+        : `/admin/docs/project/${viewingDoc.path}`
+      return api.get(url).then(r => r.data)
+    },
+    enabled: !!viewingDoc,
+    staleTime: 5 * 60_000,
+  })
+
+  if (!viewingDoc) return null
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        className={`w-full max-w-4xl h-[80vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl
+          ${isDark ? 'bg-gray-900 border border-gray-700' : 'bg-white border border-gray-200'}`}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className={`flex items-center justify-between px-5 py-3.5 border-b shrink-0
+          ${isDark ? 'border-gray-700' : 'border-gray-200'}`}
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base">{viewingDoc.icon}</span>
+            <span className={`text-sm font-semibold font-mono ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
+              {viewingDoc.scope === 'global' ? '~/.claude/' : '.claude/'}{viewingDoc.path}
+            </span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded border font-medium
+              ${viewingDoc.scope === 'global'
+                ? isDark ? 'bg-indigo-900/40 border-indigo-700 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                : isDark ? 'bg-emerald-900/40 border-emerald-700 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              }`}
+            >
+              {viewingDoc.scope === 'global' ? 'global' : 'this project'}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className={`text-xs font-medium px-2 py-1 rounded transition-colors
+              ${isDark ? 'text-gray-400 hover:text-gray-200 hover:bg-gray-800' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+          >
+            ✕ Close
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          {isLoading && <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>Loading…</p>}
+          {isError && <p className="text-sm text-red-500">Failed to load. Is the backend running?</p>}
+          {docData && (
+            <pre className={`text-xs leading-relaxed whitespace-pre-wrap font-mono
+              ${isDark ? 'text-gray-300' : 'text-gray-700'}`}
+            >
+              {docData.content}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function StandardsTab() {
+  const { isDark } = useTheme()
+  const [viewingDoc, setViewingDoc] = useState(null)
+
+  const card = isDark
+    ? 'bg-gray-800 border border-gray-700 rounded-2xl p-4 shadow-sm'
+    : 'bg-white border border-gray-200 rounded-2xl p-4 shadow-sm'
+
+  const sectionTitle = isDark
+    ? 'text-sm font-semibold text-gray-100 mb-1'
+    : 'text-sm font-semibold text-gray-900 mb-1'
+
+  const sectionDesc = isDark
+    ? 'text-xs text-gray-400 mb-4 leading-snug'
+    : 'text-xs text-gray-500 mb-4 leading-snug'
+
+  const scopeBadge = (scope) => isDark
+    ? scope === 'global'
+      ? 'bg-indigo-900/40 border-indigo-700 text-indigo-300'
+      : 'bg-emerald-900/40 border-emerald-700 text-emerald-300'
+    : scope === 'global'
+      ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+      : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+
+  function FileCard({ file, scope }) {
+    return (
+      <div className={`rounded-xl p-3 border flex flex-col gap-1.5
+        ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-100'}`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-sm shrink-0">{file.icon}</span>
+            <span className={`text-[10px] font-mono font-semibold truncate
+              ${isDark ? 'text-gray-200' : 'text-gray-800'}`}
+            >
+              {file.title}
+            </span>
+          </div>
+          <button
+            onClick={() => setViewingDoc({ ...file, scope })}
+            className={`text-[10px] font-medium shrink-0 px-1.5 py-0.5 rounded transition-colors
+              ${isDark ? 'text-indigo-400 hover:text-indigo-300 hover:bg-indigo-950/40' : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'}`}
+          >
+            View →
+          </button>
+        </div>
+        <p className={`text-[10px] leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+          {file.desc}
+        </p>
+        <span className={`self-start text-[9px] px-1.5 py-0.5 rounded border font-medium
+          ${scopeBadge(scope)}`}
+        >
+          {scope === 'global' ? '🌍 all projects' : '📁 this project'}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="max-w-5xl space-y-8">
+
+      {/* ── Section 1: Global configuration ── */}
+      <div>
+        <p className={sectionTitle}>🌍 Global Configuration — <code className="font-mono text-[11px]">~/.claude/</code></p>
+        <p className={sectionDesc}>
+          These files are loaded automatically by Claude Code in <strong>every project</strong>.
+          They define universal Working Rules, security invariants, and reusable skills that apply
+          regardless of what project you are working in.
+        </p>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {GLOBAL_CONFIG_FILES.map(f => (
+            <FileCard key={f.path} file={f} scope="global" />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Section 2: Project configuration ── */}
+      <div>
+        <p className={sectionTitle}>📁 Project Configuration — <code className="font-mono text-[11px]">.claude/</code></p>
+        <p className={sectionDesc}>
+          These files are specific to <strong>this project</strong>. They extend the global rules
+          with project-specific logic: platform-specific SQL queries, FastAPI + React conventions,
+          and commands for this platform's scraper, review queue, and trends pipeline.
+        </p>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {PROJECT_CONFIG_FILES.map(f => (
+            <FileCard key={f.path} file={f} scope="project" />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Section 3: Working Rules ── */}
+      <div>
+        <p className={sectionTitle}>📐 Working Rules</p>
+        <p className={sectionDesc}>
+          13 rules that govern every Claude Code session on this project. Color-coded by category:
+          {' '}
+          <span className="inline-flex items-center gap-1 text-[10px]">
+            <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> before-task
+            <span className="w-2 h-2 rounded-full bg-green-500 inline-block ml-2" /> after-task
+            <span className="w-2 h-2 rounded-full bg-purple-500 inline-block ml-2" /> code-quality
+            <span className="w-2 h-2 rounded-full bg-red-500 inline-block ml-2" /> data-safety
+            <span className="w-2 h-2 rounded-full bg-amber-500 inline-block ml-2" /> git
+          </span>
+        </p>
+        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+          {WORKING_RULES.map(({ n, cat, title, body }) => {
+            const c = RULE_COLORS[cat]
+            return (
+              <div
+                key={n}
+                className={`rounded-xl px-3 py-2.5 border flex gap-3 items-start
+                  ${isDark ? c.dark : c.light}`}
+              >
+                <div className={`text-lg font-bold tabular-nums shrink-0 leading-tight
+                  ${isDark ? c.ndark : c.num}`}
+                >
+                  {n}
+                </div>
+                <div>
+                  <div className={`text-xs font-semibold leading-tight
+                    ${isDark ? c.ndark : c.num}`}
+                  >
+                    {title}
+                  </div>
+                  <div className={`text-[10px] mt-0.5 leading-snug
+                    ${isDark ? 'text-gray-300' : 'text-gray-600'}`}
+                  >
+                    {body}
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── Section 4: New Project Checklist ── */}
+      <div>
+        <p className={sectionTitle}>🚀 New Project Checklist</p>
+        <p className={sectionDesc}>
+          Step-by-step guide for setting up any new project with Claude Code standards.
+          Run <code className="font-mono text-[11px]">/new-project</code> to execute this automatically.
+        </p>
+        <div className="flex flex-col gap-2">
+          {NEW_PROJECT_STEPS.map(({ n, icon, title, body }) => (
+            <div
+              key={n}
+              className={`flex gap-3 items-start rounded-xl px-3 py-2.5 border
+                ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'}`}
+            >
+              <div className={`flex items-center justify-center w-6 h-6 rounded-full shrink-0 text-xs font-bold
+                ${isDark ? 'bg-indigo-800 text-indigo-200' : 'bg-indigo-100 text-indigo-700'}`}
+              >
+                {n}
+              </div>
+              <div>
+                <div className={`text-xs font-semibold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>
+                  {icon} {title}
+                </div>
+                <div className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  {body}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className={`mt-3 rounded-xl px-4 py-3 border text-xs leading-relaxed
+          ${isDark ? 'bg-indigo-950/40 border-indigo-800 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-800'}`}
+        >
+          <strong>/new-project</strong> automates all 8 steps. Invoke it at the start of any new project to get CLAUDE.md, REVIEW.md, hooks, skills, and the initial commit set up in one pass.
+        </div>
+      </div>
+
+      {/* Doc viewer modal */}
+      <DocViewModal
+        viewingDoc={viewingDoc}
+        onClose={() => setViewingDoc(null)}
+        isDark={isDark}
+      />
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -1431,6 +1857,7 @@ export default function AdminArchitecture() {
     { key: 'flow',         label: '⬇ Flow' },
     { key: 'architecture', label: '⬛ Architecture' },
     { key: 'guidelines',   label: '📋 Guidelines' },
+    { key: 'standards',    label: '📐 Standards' },
   ]
 
   return (
@@ -1471,6 +1898,7 @@ export default function AdminArchitecture() {
       {activeTab === 'flow'         && <FlowTab />}
       {activeTab === 'architecture' && <ArchTab />}
       {activeTab === 'guidelines'   && <GuidelinesTab />}
+      {activeTab === 'standards'    && <StandardsTab />}
     </div>
   )
 }

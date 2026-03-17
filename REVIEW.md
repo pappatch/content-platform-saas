@@ -681,3 +681,49 @@ New Claude Code sessions load `CLAUDE.md` but do not automatically discover `.cl
 **Rating: GOOD with well-understood gaps**
 
 The automation layer formalises the session discipline that was already being followed informally. All new files are documentation/instruction only — no new code paths, no new attack surface. The mechanical enforcement gap (R19) is acceptable for a single-developer project. Outstanding production blockers unchanged (R1, R2, R3).
+
+---
+
+## Session Audit — 2026-03-17 (global config + Standards tab)
+
+**Scope:** Global `~/.claude/` configuration, `GET /admin/docs/project/` + `/global/` backend routes, Architecture.jsx Standards tab.
+
+### Security Review
+
+**SAFE — `docs.py` extended routes follow the same strict allowlist pattern as the original route.**
+- `GET /admin/docs/project/{filepath:path}` and `GET /admin/docs/global/{filepath:path}` both check `filepath` against an allowlist set (`_ALLOWED_PROJECT_DOCS`, `_ALLOWED_GLOBAL_DOCS`) **before** any `Path` I/O.
+- Base paths are constructed from `Path(__file__).resolve().parents[4] / ".claude"` and `Path.home() / ".claude"` (constants), never from raw user input — path traversal is impossible.
+- Both routes require `require_admin` dependency — no unauthenticated access.
+- FastAPI route registration order: `/project/{filepath:path}` and `/global/{filepath:path}` are registered before `/{filename}` so the literal prefix is matched first; no routing ambiguity.
+- `~/.claude/` files served are read-only via `path.read_text()` — no writes possible through this API.
+
+**R21 — `_ALLOWED_GLOBAL_DOCS` includes `commands/pre-task.md` which does not exist as a command (it is a hook wrapper)**
+The allowlist entry `commands/pre-task.md` refers to `~/.claude/commands/pre-task.md` which was created. The naming is correct (it is in `commands/`). No issue — entry is valid.
+
+### Code Quality Observations
+
+**Q30 — `DocViewModal` component created to avoid duplication**
+A shared `DocViewModal` is used by `StandardsTab` for all "View →" popups. The existing `GuidelinesTab` still has its own inline modal for CLAUDE.md/REVIEW.md — these two patterns coexist but serve different scopes (Guidelines fetches root docs; Standards fetches `.claude/` and `~/.claude/` files). Acceptable dual-pattern: `DocViewModal` is available if GuidelinesTab modal is ever refactored.
+
+**Q31 — `GLOBAL_CONFIG_FILES` and `PROJECT_CONFIG_FILES` use `scope` field for API routing**
+`DocViewModal` reads `viewingDoc.scope` (`'global'` | `'project'`) to pick the correct API endpoint. This is a clean two-value discriminant — no magic strings leaking beyond the two places.
+
+**Q32 — `RULE_COLORS` map uses both `light` and `dark` Tailwind class strings**
+Both variants are always bundled (PurgeCSS won't tree-shake them since they're string concatenation). Acceptable — Tailwind's safelist concern only applies when class names are constructed from dynamic fragments; here the full class strings are in the constant so PurgeCSS/Tailwind scans them correctly.
+
+**Q33 — `StandardsTab` renders a "New Project Checklist" section with 8 steps**
+This is documentation UI only — no backend calls beyond the "View →" modal fetch. All 8 steps reference existing commands/hooks that are on disk.
+
+### New Recommendations
+
+**R22 — Global `~/.claude/CLAUDE.md` is not loaded in this project's context**
+The global `~/.claude/CLAUDE.md` is automatically loaded by Claude Code at the start of every session. The project `CLAUDE.md` (`platform/CLAUDE.md`) extends it. If both files define conflicting rules, the project file takes precedence. Currently there is no conflict — global rules 1–11 map to project rules 1–13 with extensions. No change needed; document this in a future onboarding note.
+
+**R23 — `~/.claude/commands/` wrappers are thin `See skill for full procedure` files**
+This is intentional: commands are thin entry points; skills hold the full procedure. Reduces duplication. However, if a skill is updated, the corresponding command stub must be checked to ensure the description line still matches. Low maintenance burden for 8 command files.
+
+### Updated Overall Assessment
+
+**Rating: GOOD — standards layer complete**
+
+Global configuration and project standards are now self-documenting and browsable through the admin UI (Architecture → Standards tab). The backend routes follow the same security pattern as the existing docs route. No new attack surface introduced. Outstanding production blockers unchanged (R1, R2, R3).
