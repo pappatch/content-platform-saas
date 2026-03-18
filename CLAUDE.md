@@ -29,6 +29,9 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 | `/trends` | Show today's trending topics by region; dismiss or create sites from trends |
 | `/api-costs` | Cost summary report from api_usage_log — calls and estimated spend per service for current month |
 | `/refactor` | Scan `frontend/src/` for duplicate components, copy-pasted logic, and misplaced shared code; auto-refactor on confirmation |
+| `/check-alerts` | Fetch unread alerts, display thermometer status (🟢/🔵/🟠/🔴), grouped summary table, and fix suggestions |
+| `/run-log-analysis` | Run `analyze_logs(db)` on-demand; print rule-by-rule results; insert any triggered alerts into DB |
+| `/clear-alerts [level]` | Delete alerts by level (all/info/warning/critical) with confirmation guard for criticals |
 
 **Skills** (reusable — invoke with `/skill-name`):
 
@@ -71,7 +74,7 @@ See the **📐 Standards** tab in the Architecture page for an interactive brows
 
 ```
 ~/.claude/
-  CLAUDE.md                     # Universal Working Rules 1–11 + code quality + security invariants
+  CLAUDE.md                     # Universal Working Rules 1–11 + code quality + security + health standards
   hooks/
     pre-task.md                 # Generic pre-task checklist (read context, git status, risk level)
     post-task.md                # Generic post-task checklist (code review, docs, commit)
@@ -90,6 +93,9 @@ See the **📐 Standards** tab in the Architecture page for an interactive brows
     image-fix.md                # Thin wrapper → skills/image-fix.md
     session-handoff.md          # Thin wrapper → skills/session-handoff.md
     new-project.md              # Full 8-step wizard for new project scaffold
+    check-alerts.md             # Fetch + display unread alerts, thermometer status, fix suggestions
+    run-log-analysis.md         # Run analyze_logs(db) on-demand; print rule results; insert alerts
+    clear-alerts.md             # Delete alerts by level (all/info/warning/critical) with confirm guard
 ```
 
 ---
@@ -601,6 +607,8 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | **Log analyzer → DB-based rules** | `services/log_analyzer.py` — replaced all log-pattern rules with DB queries: `articles_stuck_pending` (>30 min), `scrape_job_failed`, `no_articles_saved_2h`; API error rules now query `api_usage_log` table; `db_connection_error` kept as log-pattern fallback (can't query DB when DB is down) | ✅ Done |
 | **InMemoryLogHandler** | `workers/alert_worker.py` — `InMemoryLogHandler` class (`WARNING`/`ERROR`, `app.*` loggers, `deque(500)`); `APP_LOG_BUFFER` singleton; `install_app_log_handler()` called at startup in `main.py` | ✅ Done |
 | **`POST /admin/alerts/test`** | `routes/admin/alerts.py` — creates a test `critical` alert to verify full alert UI flow; admin-gated; registered before `/{alert_id}` DELETE | ✅ Done |
+| **Alert management slash commands** | `.claude/commands/check-alerts.md` (thermometer status + grouped table + fix suggestions + actions); `.claude/commands/run-log-analysis.md` (on-demand analyze_logs, rule-by-rule summary, inserts alerts); `.claude/commands/clear-alerts.md` (level-scoped delete with critical confirm guard); mirrored to `~/.claude/commands/` as generic versions | ✅ Done |
+| **`~/.claude/CLAUDE.md` Health & Alerting Standard** | Added available alert skills table: `/check-alerts`, `/run-log-analysis`, `/clear-alerts` | ✅ Done |
 | Global standards updated | `~/.claude/CLAUDE.md` — Admin UI Standard section; `~/.claude/commands/new-project.md` — Step 8 (health indicator setup) | ✅ Done |
 | Working Rules 11+12 | `CLAUDE.md` — Rule 11 (configuration discipline), Rule 12 (no empty files) | ✅ Done |
 | Automation layer — hooks | `.claude/hooks/pre-task.md`, `post-task.md`, `pre-commit.md` | ✅ Done |

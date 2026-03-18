@@ -865,3 +865,11 @@ app.* loggers
 
 - **R27** — `trends_worker` and `image_worker` have no dedicated alert rules. Both are low-risk (non-critical pipelines), but a `scrape_job_type_failed` or `image_worker_consecutive_failures` rule would improve coverage.
 - **R28** — `APP_LOG_BUFFER` (InMemoryLogHandler) is currently not directly consumed by any alert rule — it exists for future use and external observability. Consider a rule that counts recent ERROR records from `APP_LOG_BUFFER` as a catch-all for unexpected failures not yet covered by specific DB rules.
+
+#### Additional standards codified (2026-03-18 — alert management commands)
+
+- `.claude/commands/check-alerts.md` — project-specific: queries `/admin/alerts`, thermometer status, grouped table, fix-by-source suggestions, interactive action menu
+- `.claude/commands/run-log-analysis.md` — project-specific: imports and runs `analyze_logs(db)` on-demand with rule-by-rule output and DB insertion
+- `.claude/commands/clear-alerts.md` — project-specific: level-scoped hard-delete with critical confirmation guard
+- `~/.claude/commands/` — all three commands mirrored as generic versions adaptable to any project using the Health & Alerting Standard
+- `~/.claude/CLAUDE.md` Health & Alerting Standard — added skills table `/check-alerts`, `/run-log-analysis`, `/clear-alerts` as the prescribed way to manage alerts (over ad-hoc DB queries)
