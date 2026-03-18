@@ -113,13 +113,10 @@ export default function AdminLayout() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
-        <header className={`flex items-center gap-2 px-6 py-3 border-b ${
+        {/* Top bar — AlertControls sits flush left, inline with sidebar "Admin" title */}
+        <header className={`flex items-center gap-2 px-4 py-3 border-b ${
           isDark ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'
         }`}>
-          <span className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-            Admin
-          </span>
           <AlertControls />
         </header>
         <main className="flex-1 p-6">

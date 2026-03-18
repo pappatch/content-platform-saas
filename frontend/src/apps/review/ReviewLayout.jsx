@@ -85,8 +85,7 @@ export default function ReviewLayout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center gap-2 px-6 py-3 border-b bg-white border-gray-200">
-          <span className="text-sm font-semibold text-gray-900">Review</span>
+        <header className="flex items-center gap-2 px-4 py-3 border-b bg-white border-gray-200">
           <AlertControls />
         </header>
         <main className="flex-1 p-6">

@@ -201,18 +201,18 @@ export default function HealthThermometer({ onToggle }) {
         </svg>
       </button>
 
-      {/* Custom tooltip */}
+      {/* Custom tooltip — appears below, never clipped by viewport top */}
       {showTooltip && (
         <div
-          className={`absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-[100] px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap shadow-lg pointer-events-none ${
+          className={`absolute left-1/2 -translate-x-1/2 top-full mt-1 z-[100] px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap shadow-lg pointer-events-none ${
             isDark ? 'bg-gray-700 text-gray-100' : 'bg-gray-900 text-white'
           }`}
         >
           {tooltip}
-          {/* Arrow */}
+          {/* Arrow pointing up */}
           <div
-            className={`absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent ${
-              isDark ? 'border-t-gray-700' : 'border-t-gray-900'
+            className={`absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent ${
+              isDark ? 'border-b-gray-700' : 'border-b-gray-900'
             }`}
           />
         </div>
