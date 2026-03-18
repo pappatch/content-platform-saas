@@ -799,6 +799,18 @@ async def scrape_and_save(job_id: int) -> None:
                 skip_duplicate += 1
                 continue
 
+            # Blocked-domain check (social platforms that block bots)
+            _raw_blocked = settings_service.get("blocked_scrape_domains", "")
+            _blocked_domains = {d.strip() for d in _raw_blocked.split(",") if d.strip()}
+            _hostname = urlparse(url).hostname or ""
+            if any(
+                _hostname == d or _hostname.endswith("." + d)
+                for d in _blocked_domains
+            ):
+                logger.info("Job %d: SKIP blocked_domain — %s", job_id, url)
+                skip_ssrf += 1
+                continue
+
             # SSRF validation
             try:
                 validated_url = await validate_url(url)

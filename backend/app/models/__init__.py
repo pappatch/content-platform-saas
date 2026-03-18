@@ -19,3 +19,4 @@ from app.models.trend import Trend, TrendStatus
 from app.models.app_setting import AppSetting
 from app.models.platform_settings import PlatformSetting, ValueType
 from app.models.api_usage_log import ApiUsageLog
+from app.models.alert import Alert

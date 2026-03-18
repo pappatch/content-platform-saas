@@ -727,3 +727,62 @@ This is intentional: commands are thin entry points; skills hold the full proced
 **Rating: GOOD — standards layer complete**
 
 Global configuration and project standards are now self-documenting and browsable through the admin UI (Architecture → Standards tab). The backend routes follow the same security pattern as the existing docs route. No new attack surface introduced. Outstanding production blockers unchanged (R1, R2, R3).
+
+Global configuration and project standards are now self-documenting and browsable through the admin UI (Architecture → Standards tab). The backend routes follow the same security pattern as the existing docs route. No new attack surface introduced. Outstanding production blockers unchanged (R1, R2, R3).
+
+---
+
+## Session Audit — 2026-03-18 (HealthThermometer + alert bulk delete)
+
+**Scope:** `HealthThermometer.jsx`, `AlertControls.jsx`, `AlertBell.jsx` (refactor), `alerts.py` (bulk delete routes), `log_analyzer.py` (cooldown fix), `Alerts.jsx` (bulk delete UI), layout headers (AdminLayout, CmsLayout, ReviewLayout).
+
+### Security Review
+
+**SAFE — all new `/admin/alerts/bulk` and `/admin/alerts/all` routes require `require_admin`.**
+- `DELETE /admin/alerts/bulk`: accepts `AlertBulkDeleteRequest` Pydantic model for ID list validation. No raw SQL — uses `Alert.id.in_(body.ids)` ORM query. Hard-delete is appropriate for operational alert records.
+- `DELETE /admin/alerts/all`: level param validated against `_VALID_LEVELS` set before any DB operation — 422 on invalid value. Omitting level deletes all (intended behaviour).
+- Route registration order in `alerts.py`: `/bulk` and `/all` are literal paths registered before `/{alert_id}` param path — no routing ambiguity in FastAPI. ✓
+- `HealthThermometer` fetches `/admin/alerts` — returns 403 for non-admin users; component detects `isError` and returns `null`. No data leaks to non-admin users through the frontend. ✓
+
+**SAFE — `AlertBell` bulk delete mutations (`deleteAll`, `deleteBulk`) are admin-gated server-side.**
+No client-side trust — the frontend just sends requests; the backend enforces `require_admin` on every delete route.
+
+**SAFE — SVG injection not possible.**
+`HealthThermometer` renders a hardcoded SVG with only numeric fill values derived from a severity enum. No user input is rendered into the SVG. ✓
+
+### Code Quality Observations
+
+**Q34 — `AlertBell.jsx` controlled/uncontrolled dual-mode pattern**
+`AlertBell` now supports both modes via `isOpen`/`onOpenChange` props (controlled, used by `AlertControls`) and falls back to internal `useState` (uncontrolled). The `setOpen` helper correctly dispatches to the right state. The `eslint-disable-line react-hooks/exhaustive-deps` comment on the `useEffect` dependency array suppresses a stale-closure warning that is functionally benign (the `onOpenChange` setter from `AlertControls` is stable).
+
+**Q35 — `AlertControls.jsx` is a minimal shared wrapper (6 lines of logic)**
+Follows Reusability Rule 9 — the shared state between `HealthThermometer` and `AlertBell` is lifted into a 20-line wrapper component used in all three layouts. Clean pattern.
+
+**Q36 — `HealthThermometer` SVG gradient and clipPath IDs are document-global**
+IDs like `thermo-normal-light` are global in the SVG namespace. Safe because only one `HealthThermometer` renders per page. If multiple instances were ever needed, `useId()` (React 18) should be used. Documented in W2 of code review.
+
+**Q37 — `DELETE /admin/alerts/bulk` body in HTTP DELETE**
+Valid per RFC 7231 — DELETE requests may include a body. Axios requires `{ data: { ids } }` syntax. Acceptable for an internal admin tool. Some enterprise reverse proxies may strip DELETE bodies — noted as W1 in code review.
+
+**Q38 — `Alerts.jsx` selected-set management**
+Checkbox state is a `Set<number>` held in `useState`. `toggleSelectAll` and `toggleOne` both return new `Set` instances (no mutation). Deselection on filter change clears the set (prevents stale selections across page changes). Clean pattern.
+
+**Q39 — `log_analyzer.py` Google CSE cooldown: 120 → 360 minutes**
+Google CSE free tier resets daily (not hourly). A 6-hour cooldown (360 min) prevents repeated info-level noise while still alerting if the quota is hit multiple times in a day (e.g. after a manual reset). Correct fix.
+
+### New Recommendations
+
+**R24 — `HealthThermometer` fetch uses full alert list (limit=100) separately from `AlertBell` (limit=10)**
+This means two concurrent `/admin/alerts` queries on every page load. Both refresh every 30s. Acceptable for an internal tool with low traffic, but if backend load is a concern, consider a dedicated `GET /admin/alerts/summary` endpoint that returns only `{critical: N, warning: N, info: N}` — one lightweight query instead of two paginated ones.
+
+**R25 — `animate-pulse` on HealthThermometer may be distracting with persistent warnings**
+Tailwind's `animate-pulse` runs continuously while any non-green alert exists. For long-lived warning states (e.g. "No new articles in 2 hours" fires every 2h), the thermometer will pulse indefinitely. Consider dampening: pulse only for alerts created in the last 30 minutes, and show a static elevated colour for older alerts.
+
+**R26 — CmsLayout and ReviewLayout headers are not dark-mode-aware**
+The new header (`bg-white border-gray-200`) is hardcoded light. `AlertBell` and `HealthThermometer` inside it use `useTheme()` so they respond correctly, but the header container background stays white in dark mode. Low priority — CmsLayout and ReviewLayout don't yet support dark mode globally.
+
+### Updated Overall Assessment
+
+**Rating: GOOD — health monitoring layer complete**
+
+The HealthThermometer provides always-visible system health status across all three management interfaces. The alert system (model + worker + routes + UI) is complete and production-ready pending the Alembic migration. All new routes are properly admin-gated. No new attack surface introduced. Outstanding production blockers unchanged (R1, R2, R3). New minor items: R24 (potential query optimisation), R25 (pulse UX), R26 (CMS/Review dark mode headers).

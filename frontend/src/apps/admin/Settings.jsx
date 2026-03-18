@@ -61,8 +61,9 @@ const GROUPS = [
       'scraper_tavily_max_results',
       'scraper_google_max_results',
       'scrape_worker_interval_seconds',
+      'blocked_scrape_domains',
     ],
-    note:  'Search provider result limits, content quality gates, and scrape worker poll frequency.',
+    note:  'Search provider result limits, content quality gates, scrape worker poll frequency, and blocked domains.',
   },
   {
     key:   'images',
@@ -114,6 +115,23 @@ const SELECT_OPTIONS = {
   admin_theme_default: ['light', 'dark'],
 }
 
+/**
+ * Settings that should render as a textarea (one item per line).
+ * The DB stores the value as a comma-separated string; the textarea displays
+ * one entry per line and converts back to comma-separated on save.
+ */
+const TEXTAREA_KEYS = new Set(['blocked_scrape_domains'])
+
+/** Convert stored comma-separated string to one-per-line display value. */
+function commaToLines(csv) {
+  return csv.split(',').map(s => s.trim()).filter(Boolean).join('\n')
+}
+
+/** Convert one-per-line textarea value back to comma-separated storage format. */
+function linesToComma(lines) {
+  return lines.split('\n').map(s => s.trim()).filter(Boolean).join(',')
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -133,7 +151,11 @@ function formatKey(key) {
 
 function SettingRow({ setting }) {
   const qc = useQueryClient()
-  const [localValue, setLocalValue] = useState(setting.value)
+  const isTextarea  = TEXTAREA_KEYS.has(setting.key)
+  // Textarea keys display one-per-line; stored as comma-separated
+  const [localValue, setLocalValue] = useState(
+    isTextarea ? commaToLines(setting.value) : setting.value
+  )
   const [feedback, setFeedback] = useState(null)  // null | 'saved' | 'error:<msg>'
 
   const isBool      = setting.value_type === 'bool'
@@ -144,10 +166,15 @@ function SettingRow({ setting }) {
   const step        = isFloat ? '0.01' : '1'
   const min         = (isFloat || isInt) ? '0' : undefined
 
-  const dirty = localValue !== setting.value
+  // For textarea keys compare against the comma-separated form
+  const storedDisplay = isTextarea ? commaToLines(setting.value) : setting.value
+  const dirty = localValue !== storedDisplay
 
   const mut = useMutation({
-    mutationFn: () => patchSetting({ key: setting.key, value: localValue }),
+    mutationFn: () => patchSetting({
+      key: setting.key,
+      value: isTextarea ? linesToComma(localValue) : localValue,
+    }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['platform-settings'] })
       setFeedback('saved')
@@ -184,8 +211,17 @@ function SettingRow({ setting }) {
       </div>
 
       {/* Control + Save column */}
-      <div className="flex items-center gap-2 shrink-0 mt-0.5">
-        {isBool ? (
+      <div className={`flex ${isTextarea ? 'items-start' : 'items-center'} gap-2 shrink-0 mt-0.5`}>
+        {isTextarea ? (
+          /* Textarea for multi-value string settings (one item per line) */
+          <textarea
+            value={localValue}
+            rows={5}
+            onChange={(e) => { setLocalValue(e.target.value); setFeedback(null) }}
+            className="w-52 border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y"
+            placeholder="one-domain-per-line"
+          />
+        ) : isBool ? (
           /* Toggle */
           <label className="relative inline-flex items-center cursor-pointer">
             <input
@@ -232,10 +268,10 @@ function SettingRow({ setting }) {
 
         <button
           onClick={() => mut.mutate()}
-          disabled={mut.isPending || (!dirty && !isBool && !selectOpts)}
-          title={!dirty && !isBool && !selectOpts ? 'No changes' : 'Save'}
+          disabled={mut.isPending || (!dirty && !isBool && !selectOpts && !isTextarea)}
+          title={!dirty && !isBool && !selectOpts && !isTextarea ? 'No changes' : 'Save'}
           className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-            dirty || isBool || selectOpts
+            dirty || isBool || selectOpts || isTextarea
               ? 'bg-indigo-600 text-white hover:bg-indigo-700'
               : 'bg-gray-100 text-gray-400 cursor-not-allowed'
           } disabled:opacity-60`}

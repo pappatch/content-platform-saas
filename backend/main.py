@@ -18,10 +18,13 @@ from app.routes.admin.users import router as admin_users_router
 from app.routes.admin.images import router as admin_images_router
 from app.routes.admin.api_usage import router as admin_api_usage_router
 from app.routes.admin.docs import router as admin_docs_router
+from app.routes.admin.alerts import router as admin_alerts_router
 from app.workers.scrape_worker import worker_loop
 from app.workers.review_worker import review_worker_loop
 from app.workers.trends_worker import trends_worker_loop
 from app.workers.image_worker import image_worker_loop
+from app.workers.alert_worker import alert_worker_loop
+from app.services.log_analyzer import install_log_buffer
 from app.routes.trends import router as trends_router
 from app.routes.settings import router as settings_router
 import app.models
@@ -47,10 +50,14 @@ async def lifespan(app: FastAPI):
     from app.services.settings_service import seed_defaults
     seed_defaults()
 
+    # Install log buffer before launching workers so all log output is captured
+    install_log_buffer()
+
     scrape_task  = asyncio.create_task(worker_loop())
     review_task  = asyncio.create_task(review_worker_loop())
     trends_task  = asyncio.create_task(trends_worker_loop())
     image_task   = asyncio.create_task(image_worker_loop())
+    alert_task   = asyncio.create_task(alert_worker_loop())
     logger.info("Application startup complete")
     try:
         yield
@@ -59,7 +66,8 @@ async def lifespan(app: FastAPI):
         review_task.cancel()
         trends_task.cancel()
         image_task.cancel()
-        for task in (scrape_task, review_task, trends_task, image_task):
+        alert_task.cancel()
+        for task in (scrape_task, review_task, trends_task, image_task, alert_task):
             try:
                 await task
             except asyncio.CancelledError:
@@ -99,6 +107,7 @@ app.include_router(admin_users_router)
 app.include_router(admin_images_router)
 app.include_router(admin_api_usage_router)
 app.include_router(admin_docs_router)
+app.include_router(admin_alerts_router)
 app.include_router(trends_router)
 app.include_router(settings_router)
 

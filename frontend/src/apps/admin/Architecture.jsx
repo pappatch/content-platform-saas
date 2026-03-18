@@ -458,7 +458,7 @@ function StatsBar() {
     { label: 'Published',  value: articleStats?.by_status?.published ?? '—',       color: isDark ? 'text-emerald-400' : 'text-emerald-600' },
     { label: 'Pending',    value: articleStats?.by_status?.pending ?? '—',         color: isDark ? 'text-amber-400' : 'text-amber-600' },
     { label: 'Templates',  value: 5,                                                color: isDark ? 'text-sky-400' : 'text-sky-600' },
-    { label: 'Workers',    value: 4,                                                color: isDark ? 'text-purple-400' : 'text-purple-600' },
+    { label: 'Workers',    value: 5,                                                color: isDark ? 'text-purple-400' : 'text-purple-600' },
     { label: 'Settings',   value: 21,                                               color: isDark ? 'text-gray-400' : 'text-gray-500' },
   ]
 
@@ -829,6 +829,7 @@ function ArchTab() {
                   ['review_worker',  'interval from PlatformSettings — AI reviews pending'],
                   ['trends_worker',  'interval from PlatformSettings — fetches trends'],
                   ['image_worker',   'startup + interval from PlatformSettings — validates images'],
+                  ['alert_worker',   '5m fixed interval — analyze_logs() → Alert rows'],
                 ].map(([name, desc]) => (
                   <div key={name} className={svcStyle}>
                     <div className={svcName}>{name}</div>
@@ -1093,6 +1094,8 @@ function ArchTab() {
             { name: 'Trend',           desc: 'keyword · region · score · site_id FK' },
             { name: 'AppSetting',      desc: 'key-value · trends_fetch_region' },
             { name: 'PlatformSetting', desc: 'typed key-value · updated_by · cache' },
+            { name: 'ApiUsageLog',     desc: 'per-call telemetry · 6 services · cost' },
+            { name: 'Alert',           desc: 'level · source · is_read · log_analyzer' },
           ].map(({ name, desc }) => (
             <div key={name} className={dbCard}>
               <div className={`text-xs font-semibold ${isDark ? 'text-gray-200' : 'text-gray-800'}`}>{name}</div>

@@ -2,6 +2,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useDirection } from '../../hooks/useDirection'
 import { useTheme } from '../../context/ThemeContext'
+import AlertControls from '../../components/AlertControls'
 
 const NAV_SECTIONS = [
   {
@@ -62,8 +63,8 @@ export default function AdminLayout() {
     <div className={`min-h-screen flex ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
       {/* Sidebar */}
       <aside className="w-56 shrink-0 bg-indigo-900 text-white flex flex-col">
-        <div className="px-4 py-5 text-lg font-bold tracking-wide border-b border-indigo-700">
-          Admin
+        <div className="px-4 py-5 flex items-center gap-2 border-b border-indigo-700">
+          <span className="text-lg font-bold tracking-wide">Admin</span>
         </div>
         <nav className="flex-1 px-2 py-4 space-y-4">
           {NAV_SECTIONS.map(({ label, items }) => (
@@ -112,6 +113,15 @@ export default function AdminLayout() {
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <header className={`flex items-center gap-2 px-6 py-3 border-b ${
+          isDark ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'
+        }`}>
+          <span className={`text-sm font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+            Admin
+          </span>
+          <AlertControls />
+        </header>
         <main className="flex-1 p-6">
           <Outlet />
         </main>

@@ -147,6 +147,16 @@ DEFAULTS: list[dict] = [
         ),
     },
     {
+        "key":         "blocked_scrape_domains",
+        "value":       "pinterest.com,instagram.com,facebook.com,youtube.com,tiktok.com,twitter.com,x.com",
+        "value_type":  ValueType.string,
+        "description": (
+            "Comma-separated domains to skip during scraping — social platforms that "
+            "block bots or require API access. Subdomains are also blocked "
+            "(e.g. www.instagram.com is blocked when instagram.com is listed)."
+        ),
+    },
+    {
         "key":         "scrape_worker_interval_seconds",
         "value":       "60",
         "value_type":  ValueType.int,

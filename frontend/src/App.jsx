@@ -12,6 +12,7 @@ import AdminTrends from './apps/admin/Trends'
 import AdminArchitecture from './apps/admin/Architecture'
 import AdminSettings from './apps/admin/Settings'
 import AdminApiUsage from './apps/admin/ApiUsage'
+import AdminAlerts from './apps/admin/Alerts'
 
 import CmsLayout from './apps/cms/CmsLayout'
 import CmsDashboard from './apps/cms/Dashboard'
@@ -45,6 +46,7 @@ export default function App() {
         <Route path="architecture" element={<AdminArchitecture />} />
         <Route path="settings" element={<AdminSettings />} />
         <Route path="api-usage" element={<AdminApiUsage />} />
+        <Route path="alerts" element={<AdminAlerts />} />
       </Route>
 
       {/* CMS app — editor or admin */}

@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useDirection } from '../../hooks/useDirection'
+import AlertControls from '../../components/AlertControls'
 
 const NAV_SECTIONS = [
   {
@@ -89,6 +90,10 @@ export default function CmsLayout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
+        <header className="flex items-center gap-2 px-6 py-3 border-b bg-white border-gray-200">
+          <span className="text-sm font-semibold text-gray-900">CMS</span>
+          <AlertControls />
+        </header>
         <main className="flex-1 p-6">
           <Outlet />
         </main>
