@@ -165,7 +165,7 @@ export default function AlertBell({ isOpen: controlledOpen, onOpenChange }) {
       {/* Dropdown */}
       {open && (
         <div
-          className={`absolute right-0 mt-2 w-96 rounded-xl shadow-2xl border z-50 overflow-hidden ${
+          className={`absolute left-0 mt-2 w-96 rounded-xl shadow-2xl border z-50 overflow-hidden ${
             isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
           }`}
         >
