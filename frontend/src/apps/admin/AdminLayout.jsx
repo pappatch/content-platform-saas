@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useDirection } from '../../hooks/useDirection'
 import { useTheme } from '../../context/ThemeContext'
-import AlertControls from '../../components/AlertControls'
+import HealthThermometer from '../../components/HealthThermometer'
+import AlertBell from '../../components/AlertBell'
 
 const NAV_SECTIONS = [
   {
@@ -53,6 +55,7 @@ export default function AdminLayout() {
   const { isRtl, toggle } = useDirection()
   const { isDark, toggleTheme } = useTheme()
   const navigate = useNavigate()
+  const [bellOpen, setBellOpen] = useState(false)
 
   function handleLogout() {
     logout()
@@ -63,9 +66,10 @@ export default function AdminLayout() {
     <div className={`min-h-screen flex ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
       {/* Sidebar */}
       <aside className="w-56 shrink-0 bg-indigo-900 text-white flex flex-col">
-        <div className="px-4 py-5 flex items-center justify-between border-b border-indigo-700">
+        <div className="px-4 py-5 flex items-center gap-2 border-b border-indigo-700">
           <span className="text-lg font-bold tracking-wide">Admin</span>
-          <AlertControls />
+          <HealthThermometer onToggle={() => setBellOpen(o => !o)} />
+          <AlertBell isOpen={bellOpen} onOpenChange={setBellOpen} />
         </div>
         <nav className="flex-1 px-2 py-4 space-y-4">
           {NAV_SECTIONS.map(({ label, items }) => (

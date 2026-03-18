@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useDirection } from '../../hooks/useDirection'
-import AlertControls from '../../components/AlertControls'
+import HealthThermometer from '../../components/HealthThermometer'
+import AlertBell from '../../components/AlertBell'
 
 const NAV_SECTIONS = [
   {
@@ -34,6 +36,7 @@ export default function CmsLayout() {
   const { user, logout } = useAuth()
   const { isRtl, toggle } = useDirection()
   const navigate = useNavigate()
+  const [bellOpen, setBellOpen] = useState(false)
 
   function handleLogout() {
     logout()
@@ -43,8 +46,10 @@ export default function CmsLayout() {
   return (
     <div className="min-h-screen flex bg-gray-50">
       <aside className="w-56 shrink-0 bg-emerald-900 text-white flex flex-col">
-        <div className="px-4 py-5 text-lg font-bold tracking-wide border-b border-emerald-700">
-          CMS
+        <div className="px-4 py-5 flex items-center gap-2 border-b border-emerald-700">
+          <span className="text-lg font-bold tracking-wide">CMS</span>
+          <HealthThermometer onToggle={() => setBellOpen(o => !o)} />
+          <AlertBell isOpen={bellOpen} onOpenChange={setBellOpen} />
         </div>
         <nav className="flex-1 px-2 py-4 space-y-4">
           {NAV_SECTIONS.map(({ label, items }) => (
@@ -90,9 +95,6 @@ export default function CmsLayout() {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center gap-2 px-4 py-3 border-b bg-white border-gray-200">
-          <AlertControls />
-        </header>
         <main className="flex-1 p-6">
           <Outlet />
         </main>
