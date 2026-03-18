@@ -222,7 +222,8 @@ backend/
       logo_service.py   # Stability AI SDXL 1536×640 logo generation + SVG fallback
       trends_service.py # Google Trends RSS fetch → dedup → DB; AI site config
       usage_service.py  # log_api_call() — fire-and-forget telemetry for all 6 external APIs
-      log_analyzer.py   # LOG_BUFFER ring buffer + ALERT_RULES (7 rules); analyze_logs() → alert dicts
+      log_analyzer.py   # DB-based ALERT_RULES (articles stuck pending, scrape job failed, api_usage_log error rates) + log-buffer fallback for DB-down
+      alert_worker.py   # 5-min loop; InMemoryLogHandler (WARNING/ERROR from app.* loggers, deque 500) via APP_LOG_BUFFER singleton
     utils/
       sanitize.py       # HTML sanitizer blocking XSS / script injection
     workers/
@@ -597,6 +598,9 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | Alerts.jsx bulk delete UI | `apps/admin/Alerts.jsx` — checkbox per alert row, select-all toggle, "Delete selected (N)" button, "Delete all info" button, "Delete all" button; all mutations invalidate `alerts`/`alerts-bell`/`alerts-thermometer` caches | ✅ Done |
 | Backend bulk delete routes | `routes/admin/alerts.py` — `DELETE /admin/alerts/bulk` (Pydantic body `{ids:[int]}`), `DELETE /admin/alerts/all` (?level=); literal routes registered before `/{alert_id}` param route | ✅ Done |
 | Google CSE alert cooldown fix | `services/log_analyzer.py` — `google_cse_403` cooldown 120 → 360 minutes (6 hours) | ✅ Done |
+| **Log analyzer → DB-based rules** | `services/log_analyzer.py` — replaced all log-pattern rules with DB queries: `articles_stuck_pending` (>30 min), `scrape_job_failed`, `no_articles_saved_2h`; API error rules now query `api_usage_log` table; `db_connection_error` kept as log-pattern fallback (can't query DB when DB is down) | ✅ Done |
+| **InMemoryLogHandler** | `workers/alert_worker.py` — `InMemoryLogHandler` class (`WARNING`/`ERROR`, `app.*` loggers, `deque(500)`); `APP_LOG_BUFFER` singleton; `install_app_log_handler()` called at startup in `main.py` | ✅ Done |
+| **`POST /admin/alerts/test`** | `routes/admin/alerts.py` — creates a test `critical` alert to verify full alert UI flow; admin-gated; registered before `/{alert_id}` DELETE | ✅ Done |
 | Global standards updated | `~/.claude/CLAUDE.md` — Admin UI Standard section; `~/.claude/commands/new-project.md` — Step 8 (health indicator setup) | ✅ Done |
 | Working Rules 11+12 | `CLAUDE.md` — Rule 11 (configuration discipline), Rule 12 (no empty files) | ✅ Done |
 | Automation layer — hooks | `.claude/hooks/pre-task.md`, `post-task.md`, `pre-commit.md` | ✅ Done |
@@ -647,7 +651,8 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 ### Exact next steps to continue from
 
 1. Run `alembic upgrade head` to apply migration `e2f3a4b5c6d7` (alerts table), then restart backend — alert_worker will start generating alerts within 5 minutes
-2. Open admin → thermometer should show green; run a scrape job to trigger API calls; if Tavily/Anthropic errors occur thermometer turns orange/red
+2. Open admin → click thermometer → `POST /admin/alerts/test` to create a test critical alert and confirm full UI flow (bell badge, dropdown, Alerts page all update)
+3. After confirming test alert visible: delete it via "Delete all" in the bell dropdown
 3. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + checkbox UI in `Articles.jsx` (checkboxes partially exist); after building run `/doc-sync`
 4. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
 5. Run a scrape job → confirm API Costs dashboard shows live Tavily + Anthropic call data → run `/image-fix [site_id]` to clean up any off-topic images

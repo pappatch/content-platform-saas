@@ -177,6 +177,32 @@ def delete_alerts_all(
     return {"deleted": count}
 
 
+@router.post("/alerts/test")
+def create_test_alert(
+    db: Session = Depends(get_db),
+    _:  None    = Depends(require_admin),
+):
+    """
+    Create a test critical alert to verify the full alert UI flow.
+    Useful for confirming the thermometer, bell badge, and Alerts page
+    all update correctly without waiting for a real failure.
+    """
+    now   = datetime.now(timezone.utc)
+    alert = Alert(
+        level      = "critical",
+        title      = "Test alert",
+        message    = "This is a manually triggered test alert. You can safely delete it. If you can see this in the bell dropdown and on the Alerts page, the alert system is working correctly.",
+        source     = "test",
+        is_read    = False,
+        created_at = now,
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    logger.info("Test alert created (id=%d)", alert.id)
+    return _alert_to_dict(alert)
+
+
 @router.delete("/alerts/{alert_id}")
 def delete_alert(
     alert_id: int,

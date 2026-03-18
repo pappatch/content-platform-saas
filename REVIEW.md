@@ -786,3 +786,22 @@ The new header (`bg-white border-gray-200`) is hardcoded light. `AlertBell` and 
 **Rating: GOOD — health monitoring layer complete**
 
 The HealthThermometer provides always-visible system health status across all three management interfaces. The alert system (model + worker + routes + UI) is complete and production-ready pending the Alembic migration. All new routes are properly admin-gated. No new attack surface introduced. Outstanding production blockers unchanged (R1, R2, R3). New minor items: R24 (potential query optimisation), R25 (pulse UX), R26 (CMS/Review dark mode headers).
+
+---
+
+## Session Audit — 2026-03-18
+
+**Scope:** `log_analyzer.py`, `alert_worker.py`, `alerts.py`, `main.py`
+
+### Changes reviewed
+
+| File | Change | Assessment |
+|------|--------|-----------|
+| `app/services/log_analyzer.py` | Replaced log-pattern rules with DB queries (articles stuck pending, scrape jobs failed, api_usage_log error counts) + kept log-buffer fallback for DB-down scenario | ✅ Correct — enums used, cutoff comparisons naive-UTC-safe |
+| `app/workers/alert_worker.py` | Added `InMemoryLogHandler` class (`WARNING`/`ERROR`, `app.*` loggers, `deque(500)`); `APP_LOG_BUFFER` singleton; `install_app_log_handler()` | ✅ Thread-safe, scoped correctly |
+| `app/routes/admin/alerts.py` | Added `POST /admin/alerts/test` (admin-gated, creates critical test alert) | ✅ `require_admin` present; registered before `/{alert_id}` DELETE |
+| `main.py` | Added `install_app_log_handler()` call at startup | ✅ Correct placement (before workers) |
+
+### New findings
+
+None. All changes are safe DB queries or logging infrastructure. No new external API calls, no new auth surface, no schema changes.

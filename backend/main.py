@@ -23,7 +23,7 @@ from app.workers.scrape_worker import worker_loop
 from app.workers.review_worker import review_worker_loop
 from app.workers.trends_worker import trends_worker_loop
 from app.workers.image_worker import image_worker_loop
-from app.workers.alert_worker import alert_worker_loop
+from app.workers.alert_worker import alert_worker_loop, install_app_log_handler
 from app.services.log_analyzer import install_log_buffer
 from app.routes.trends import router as trends_router
 from app.routes.settings import router as settings_router
@@ -50,8 +50,9 @@ async def lifespan(app: FastAPI):
     from app.services.settings_service import seed_defaults
     seed_defaults()
 
-    # Install log buffer before launching workers so all log output is captured
+    # Install log handlers before launching workers so all log output is captured
     install_log_buffer()
+    install_app_log_handler()
 
     scrape_task  = asyncio.create_task(worker_loop())
     review_task  = asyncio.create_task(review_worker_loop())
