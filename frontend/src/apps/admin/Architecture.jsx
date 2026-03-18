@@ -1126,14 +1126,17 @@ function ArchTab() {
 // ---------------------------------------------------------------------------
 
 const SLASH_COMMANDS = [
-  { name: '/scrape',     desc: 'Trigger a scrape job; shows new articles and auto-publish results' },
-  { name: '/review',     desc: 'Show pending articles by site/score; approve or reject interactively' },
-  { name: '/newsite',    desc: 'Guided wizard: create site, scrape job, and renderer config' },
-  { name: '/stats',      desc: 'Full platform statistics: articles, scores, job status, analytics' },
-  { name: '/deploy',     desc: 'AWS deployment checklist and status assessment' },
-  { name: '/trends',     desc: "Show today's trending topics by region; dismiss or create sites" },
-  { name: '/api-costs',  desc: 'Cost summary from api_usage_log — per-service spend this month' },
-  { name: '/refactor',   desc: 'Scan frontend/src/ for duplicate components; auto-refactor on confirm' },
+  { name: '/scrape',           desc: 'Trigger a scrape job; shows new articles and auto-publish results' },
+  { name: '/review',           desc: 'Show pending articles by site/score; approve or reject interactively' },
+  { name: '/newsite',          desc: 'Guided wizard: create site, scrape job, and renderer config' },
+  { name: '/stats',            desc: 'Full platform statistics: articles, scores, job status, analytics' },
+  { name: '/deploy',           desc: 'AWS deployment checklist and status assessment' },
+  { name: '/trends',           desc: "Show today's trending topics by region; dismiss or create sites" },
+  { name: '/api-costs',        desc: 'Cost summary from api_usage_log — per-service spend this month' },
+  { name: '/refactor',         desc: 'Scan frontend/src/ for duplicate components; auto-refactor on confirm' },
+  { name: '/check-alerts',     desc: 'Live alert health check — thermometer status, grouped table, fix suggestions' },
+  { name: '/run-log-analysis', desc: 'Trigger an immediate on-demand log analysis cycle; show rule-by-rule results' },
+  { name: '/clear-alerts',     desc: 'Delete alerts by level (all/info/warning/critical); confirms before clearing criticals' },
 ]
 
 const SKILLS = [
@@ -1211,7 +1214,7 @@ function GuidelinesTab() {
           <div className="flex items-center gap-2 mb-3">
             <span className="text-lg">⚡</span>
             <span className={cardTitle}>.claude/commands/</span>
-            <span className={pill}>8 commands</span>
+            <span className={pill}>11 commands</span>
           </div>
           <p className={cardDesc}>
             Custom Claude Code slash commands — invoke with /name at the start of any session.
@@ -1455,6 +1458,18 @@ const GLOBAL_CONFIG_FILES = [
     desc: 'Invoke /session-handoff to verify rules, clean up git, and print a ready-for-next-session handoff block.',
   },
   {
+    icon: '🔔', title: 'commands/check-alerts.md', path: 'commands/check-alerts.md',
+    desc: 'Invoke /check-alerts to perform a live alert health check: thermometer status, grouped table, fix suggestions.',
+  },
+  {
+    icon: '🔍', title: 'commands/run-log-analysis.md', path: 'commands/run-log-analysis.md',
+    desc: 'Invoke /run-log-analysis to trigger an immediate on-demand analysis cycle and show rule-by-rule results.',
+  },
+  {
+    icon: '🧹', title: 'commands/clear-alerts.md', path: 'commands/clear-alerts.md',
+    desc: 'Invoke /clear-alerts [level] to delete alerts by level; confirms before clearing criticals.',
+  },
+  {
     icon: '▶', title: 'commands/pre-task.md', path: 'commands/pre-task.md',
     desc: 'Invoke /pre-task to run the pre-task checklist: read CLAUDE.md, check git, state task context aloud.',
   },
@@ -1516,7 +1531,7 @@ const PROJECT_CONFIG_FILES = [
   },
   {
     icon: '📄', title: 'skills/doc-sync.md', path: 'skills/doc-sync.md',
-    desc: 'Project doc sync: CLAUDE.md (11 sections), REVIEW.md, Architecture.jsx (7 layers), .claude/commands/ (8 files).',
+    desc: 'Project doc sync: CLAUDE.md (11 sections), REVIEW.md, Architecture.jsx (7 layers), .claude/commands/ (11 files).',
   },
   {
     icon: '🖼️', title: 'skills/image-fix.md', path: 'skills/image-fix.md',
@@ -1558,12 +1573,24 @@ const PROJECT_CONFIG_FILES = [
     icon: '⚡', title: 'commands/refactor.md', path: 'commands/refactor.md',
     desc: '/refactor — scan frontend/src/ for duplicate components; auto-refactor on confirmation.',
   },
+  {
+    icon: '🔔', title: 'commands/check-alerts.md', path: 'commands/check-alerts.md',
+    desc: '/check-alerts — live alert health check: thermometer status, grouped table, per-source fix suggestions.',
+  },
+  {
+    icon: '🔍', title: 'commands/run-log-analysis.md', path: 'commands/run-log-analysis.md',
+    desc: '/run-log-analysis — trigger immediate on-demand log analysis cycle; rule-by-rule output.',
+  },
+  {
+    icon: '🧹', title: 'commands/clear-alerts.md', path: 'commands/clear-alerts.md',
+    desc: '/clear-alerts [level] — delete alerts by level; confirms before clearing criticals.',
+  },
 ]
 
 // Working rules data (color-coded by category)
 const WORKING_RULES = [
   { n: 1,  cat: 'before-task',   title: 'Pre-task hook',           body: 'Follow .claude/hooks/pre-task.md before every task — read CLAUDE.md fully, check git status, state task context and risk level aloud.' },
-  { n: 2,  cat: 'after-task',    title: 'Post-task hook',          body: 'Follow .claude/hooks/post-task.md after every task — code review, security check, update CLAUDE.md/REVIEW.md/Architecture.jsx/commands, commit and push.' },
+  { n: 2,  cat: 'after-task',    title: 'Post-task hook',          body: 'Follow .claude/hooks/post-task.md after every task — code review, security check, update CLAUDE.md/REVIEW.md/Architecture.jsx/commands, commit and push. Architecture.jsx MUST reflect: (a) new service/worker, (b) new model, (c) new page/component, (d) new slash command, (e) new security measure. This is not optional.' },
   { n: 3,  cat: 'code-quality',  title: 'Env var discipline',      body: 'When adding env vars, update both config.py and .env. Document the key in CLAUDE.md environment section.' },
   { n: 4,  cat: 'code-quality',  title: 'Modular services',        body: 'One responsibility per service file. Never mix DB access, business logic, and external API calls in one function.' },
   { n: 5,  cat: 'code-quality',  title: 'Errors caught & logged',  body: 'All errors must be caught and logged. Background worker inner loops wrapped in try/except Exception + logger.exception().' },
@@ -1594,6 +1621,7 @@ const NEW_PROJECT_STEPS = [
   { n: 6, icon: '🔧', title: 'Populate skills',           body: 'Copy relevant skills from ~/.claude/skills/ — always: code-review, doc-sync, session-handoff. Add image-fix for content projects.' },
   { n: 7, icon: '⚡', title: 'Create commands',           body: 'Add project-specific slash commands to .claude/commands/ for common operations (scrape, review, stats, deploy, etc.).' },
   { n: 8, icon: '📝', title: 'Initial git commit',        body: 'git add CLAUDE.md REVIEW.md .claude/ && git commit -m "chore: project scaffold with Claude Code standards"' },
+  { n: 9, icon: '🔔', title: 'Health indicator setup',   body: 'Add Alert model + Alembic migration, log_analyzer.py (DB-based ALERT_RULES), alert_worker.py (5m loop + InMemoryLogHandler), GET/PATCH/DELETE /admin/alerts routes, AlertBell + HealthThermometer + AlertControls components, integrate AlertControls into all layout headers.' },
 ]
 
 /**
@@ -1836,7 +1864,78 @@ function StandardsTab() {
         <div className={`mt-3 rounded-xl px-4 py-3 border text-xs leading-relaxed
           ${isDark ? 'bg-indigo-950/40 border-indigo-800 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-800'}`}
         >
-          <strong>/new-project</strong> automates all 8 steps. Invoke it at the start of any new project to get CLAUDE.md, REVIEW.md, hooks, skills, and the initial commit set up in one pass.
+          <strong>/new-project</strong> automates all 9 steps. Invoke it at the start of any new project to get CLAUDE.md, REVIEW.md, hooks, skills, and the initial commit set up in one pass.
+        </div>
+      </div>
+
+      {/* ── Section 5: Health & Alerting Standard ── */}
+      <div>
+        <p className={sectionTitle}>🔔 Health & Alerting Standard</p>
+        <p className={sectionDesc}>
+          Every admin interface must include a live health indicator. These three components are
+          required on all new projects. Use <code className="font-mono text-[11px]">/check-alerts</code>,{' '}
+          <code className="font-mono text-[11px]">/run-log-analysis</code>, and{' '}
+          <code className="font-mono text-[11px]">/clear-alerts</code> to operate the system.
+        </p>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          {[
+            {
+              icon: '🌡️', title: 'Backend',
+              items: [
+                'Alert model — id, level (critical/warning/info), title, message, source, is_read, created_at',
+                'log_analyzer.py — ALERT_RULES list; DB-based checks; analyze_logs(db) returns triggered list',
+                'alert_worker.py — 5-min loop; InMemoryLogHandler (WARNING/ERROR, app.* loggers, deque 500)',
+                'GET/PATCH/DELETE /admin/alerts routes — CRUD, bulk delete, mark-read, test endpoint',
+              ],
+            },
+            {
+              icon: '🖥️', title: 'Frontend',
+              items: [
+                'HealthThermometer — 14×40 SVG, 4 severity levels, gradient fill, pulse when non-green',
+                'AlertBell — dropdown with unread count badge, mark-read, delete; controlled + uncontrolled modes',
+                'AlertControls — shared wrapper: thermometer click opens bell dropdown with shared state',
+                'Integrate <AlertControls /> in every layout header (Admin, CMS, Review)',
+              ],
+            },
+            {
+              icon: '⚡', title: 'Alert Commands',
+              items: [
+                '/check-alerts — thermometer status, grouped table (critical→warning→info), fix suggestions, action menu',
+                '/run-log-analysis — run analyze_logs() immediately; rule-by-rule output; insert triggered alerts',
+                '/clear-alerts [level] — show pre-delete count; confirm for criticals; delete; suggest next step',
+                'POST /admin/alerts/test — creates a test critical alert to verify the full UI flow',
+              ],
+            },
+          ].map(({ icon, title, items }) => (
+            <div
+              key={title}
+              className={`rounded-xl p-3 border
+                ${isDark ? 'bg-gray-900 border-gray-700' : 'bg-amber-50/40 border-amber-100'}`}
+            >
+              <div className={`flex items-center gap-1.5 mb-2 text-xs font-semibold
+                ${isDark ? 'text-amber-300' : 'text-amber-800'}`}
+              >
+                <span>{icon}</span><span>{title}</span>
+              </div>
+              <ul className="space-y-1">
+                {items.map((item, i) => (
+                  <li key={i} className={`text-[10px] leading-snug flex gap-1.5
+                    ${isDark ? 'text-gray-400' : 'text-gray-600'}`}
+                  >
+                    <span className="mt-0.5 shrink-0 text-amber-500">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div className={`mt-3 rounded-xl px-4 py-3 border text-xs leading-relaxed
+          ${isDark ? 'bg-amber-950/30 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'}`}
+        >
+          Alert rules should use <strong>DB queries</strong> (not log-file patterns) wherever possible.
+          The only log-pattern rule is <code className="font-mono text-[10px]">db_connection_error</code> — kept
+          because it cannot query the DB when the DB is down. See <code className="font-mono text-[10px]">services/log_analyzer.py</code>.
         </div>
       </div>
 
