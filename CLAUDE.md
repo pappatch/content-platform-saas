@@ -47,23 +47,72 @@ Custom commands live in `.claude/commands/`. Invoke with `/command-name` in any 
 
 ## Working Rules
 
-1. **Before every task, follow `.claude/hooks/pre-task.md`** — read CLAUDE.md fully, read REVIEW.md last section, check git status, and state the task context aloud (task name, branch, last commit, relevant sections, risk level).
-2. **After every task, follow `.claude/hooks/post-task.md`** — the full post-task checklist covers: (1) code review on changed files (unused imports, hardcoded values, missing error handling); (2) security check (auth decorators, try/except, no keys in logs); (3) update CLAUDE.md (completed, architecture, API reference, data model, next steps, last session summary); (4) update REVIEW.md (append findings — even if "No new findings"); (5) **update Architecture.jsx** — this is not optional; if Architecture.jsx is not updated the task is not complete. Architecture.jsx MUST reflect: (a) any new service or worker in the Backend or Workers layers, (b) any new model in the DB layer, (c) any new page or component in the Frontend layer, (d) any new slash command in the Guidelines tab commands section, (e) any new security measure in the Security layer; (6) update `.claude/commands/` if affected; (7) commit and push. Use `/code-review` and `/doc-sync` skills to fulfil steps 1–2 and 3–6. **This rule applies to every single task without exception and cannot be skipped.** For every new service or worker added: (a) add at least one alert rule to `log_analyzer.py` covering its main failure mode; (b) ensure the service uses `logger = logging.getLogger(__name__)` and logs all errors with `logger.exception()` so `InMemoryLogHandler` captures them; (c) add the service to `usage_service.log_api_call()` tracking if it calls external APIs.
-3. **When adding env vars**, update both `config.py` and `.env`.
-4. **Keep services modular** — each service file has a single responsibility.
-5. **All errors must be caught and logged** — never crash background workers.
-6. **Auto-publish threshold is 0.5** — articles with `ai_score < 0.5` stay `pending` for editor review; articles scoring ≥ 0.5 are auto-published.
-7. **Soft-delete only** — never use DELETE to remove articles or sites. Always use `PATCH status=removed` (articles) or `PATCH is_active=false` (sites) to preserve audit trail. Hard DELETE is reserved only for test data cleanup.
-8. **Never drop or recreate the DB** — always use `alembic upgrade head`.
-9. **Reusability first** — before writing any new component or function, search the codebase for existing similar code. Any component used in more than one place must live in `/components/` (frontend) or `/services/` (backend). Changes to shared components must be tested across all consumers.
-10. **Git discipline** — commit after every completed feature or fix with a descriptive message. Format: `feat:` / `fix:` / `chore:` / `refactor:` prefix. Always run `git push` after commit. Never leave uncommitted changes at end of session. **Before every commit, follow `.claude/hooks/pre-commit.md`** — no hardcoded API keys, no empty files, no broken imports, all new routes have auth decorators, all new external API calls have try/except, Alembic migration exists for any model changes, CLAUDE.md and REVIEW.md are updated.
-11. **Configuration discipline** — any value that affects business logic, cost, or content quality must live in PlatformSettings (runtime, editable by admin via UI). Infrastructure safety constants (timeouts, max body size, rate limits) stay as code constants. Never add new hardcoded business logic values without first checking if they belong in PlatformSettings.
-12. **No empty files** — never create documentation files, directories, or placeholder files without content. If a file is created it must have real content immediately. Empty `DOCS/` files or stub components are forbidden.
+1. **Before every task, follow `.claude/hooks/pre-task.md`** — read CLAUDE.md fully, read REVIEW.md last section, check git status, and state the task context aloud (task name, branch, last commit, relevant sections, risk level). Do not write a single line of code before completing this step.
+
+2. **After every task, follow `.claude/hooks/post-task.md`** — the full post-task checklist covers: (1) code review on changed files (unused imports, hardcoded values, missing error handling); (2) security check (auth decorators, try/except, no keys in logs); (3) update **CLAUDE.md** (Completed, Architecture, API Reference, Data Model, Next Steps, Last Session Summary); (4) update **REVIEW.md** (append audit entry — even "No new findings"); (5) update **Architecture.jsx** — covers all 4 tabs (Flow, Architecture, Guidelines, Standards) and MUST reflect: (a) any new service or worker in Backend/Workers layers, (b) any new model in the DB layer, (c) any new page or component in the Frontend layer, (d) any new slash command in the Guidelines tab, (e) any new security measure in the Security layer — **this is not optional; if Architecture.jsx is not updated the task is not complete**; (6) update **`.claude/commands/`** if a new CLI workflow was added or an existing command's API signature changed; (7) if universal standards changed (new rule, new skill, new hook procedure): also update **`~/.claude/CLAUDE.md`** and the relevant **`~/.claude/commands/`** file. Use `/code-review` and `/doc-sync` skills to fulfil these steps. **This rule applies to every single task without exception.** For every new service or worker added: (a) add at least one alert rule to `log_analyzer.py` covering its main failure mode; (b) declare `logger = logging.getLogger(__name__)` and use `logger.exception()` for all errors so `InMemoryLogHandler` captures them; (c) instrument with `usage_service.log_api_call()` if it calls any external API.
+
+3. **When adding env vars** — add the key to both `app/config.py` (pydantic-settings field with type and default) and `backend/.env`. Document the new key in the **Environment section** of this file with its required/optional status and cost model. Never hardcode a key value in source code.
+
+4. **Keep services modular** — one responsibility per service file. Never mix DB access, business logic, and external API calls in a single function. If a file exceeds ~300 lines, split it by responsibility. Every service and worker must declare `logger = logging.getLogger(__name__)` at module level — no module-level `print()` calls.
+
+5. **All errors must be caught and logged** — use `logger.exception(msg)` (not `logger.error()`, not `print()`) for all error paths so the full traceback is captured by `InMemoryLogHandler`. Background worker inner loops must be wrapped in `try/except Exception as e: logger.exception(...)`. Never silently swallow exceptions — if you catch one without re-raising, you must log it.
+
+6. **Auto-publish threshold is 0.5** — articles with `ai_score < 0.5` stay `pending` for editor review; articles scoring ≥ 0.5 are auto-published when `auto_publish_enabled=true`. Both values are PlatformSettings — never hardcode them. If you change the threshold logic, update `ai_review.py` and verify the setting is read from `settings_service.get()`.
+
+7. **Soft-delete only** — never use DELETE to remove articles or sites. Use `PATCH status=removed` (articles) or `PATCH is_active=false` (sites) to preserve audit trail. Hard DELETE is reserved for operational records only (alerts, api_usage_log) and test data cleanup — never for content.
+
+8. **Never drop or recreate the DB** — always use `alembic upgrade head`. Never call `create_all()` or `drop_all()` in any production code path. After any model change: (a) import the model in `alembic/env.py`, (b) run `alembic revision --autogenerate -m "description"`, (c) review the generated migration for correctness, (d) commit the migration file alongside the model change in the same commit.
+
+9. **Reusability first** — before writing any new component or function, search the codebase for existing similar code (`Grep` or `Glob` first). Any component or utility used in 2+ places must live in `components/` (frontend) or `services/` (backend). Changes to shared code must be verified across all consumers. Run `/refactor` if duplication is suspected.
+
+10. **Git discipline** — commit after every completed feature or fix with a descriptive message. Format: `feat:` / `fix:` / `chore:` / `refactor:` / `docs:` / `security:` prefix. Always run `git push` after commit. Never leave uncommitted changes at end of session. **Before every commit, follow `.claude/hooks/pre-commit.md`** — no hardcoded API keys, no empty files, no broken imports, all new routes have auth decorators, all new external API calls have try/except, Alembic migration exists for any model changes, CLAUDE.md and REVIEW.md are updated.
+
+11. **Configuration discipline** — any value that affects business logic, cost, or content quality must live in PlatformSettings (runtime-editable via Settings UI). Infrastructure safety constants (timeouts, max body size, rate limits) stay as code constants. To add a new setting: add a key to `settings_service.py DEFAULTS` with `value_type` and `description`, then add a UI control in the relevant group in `Settings.jsx`. Never add new hardcoded business logic values without first checking if they belong in PlatformSettings.
+
+12. **No empty files** — never create documentation files, directories, or placeholder files without content. If a file is created it must have real, working content immediately. Empty `DOCS/` directories, stub components, and TODO-only files are forbidden.
+
 13. **Available skills** — use these reusable skills instead of writing ad-hoc instructions. Invoke with `/skill-name` in any Claude Code session:
     - `/code-review` — scan changed files for unused imports, hardcoded values, N+1 queries, missing error handling; report by severity (critical/warning/info); auto-fix critical issues
-    - `/doc-sync` — sync CLAUDE.md (completed, architecture, API reference), REVIEW.md (append findings), Architecture.jsx (all layers, flow steps, stats), and `.claude/commands/` (updated queries/descriptions)
+    - `/doc-sync` — sync CLAUDE.md (completed, architecture, API reference), REVIEW.md (append findings), Architecture.jsx (all 4 tabs), and `.claude/commands/` (updated descriptions)
     - `/image-fix [site_id]` — scan all published articles for missing/broken/duplicate/off-topic images; fix using site scrape keywords via Unsplash; report fixed/skipped/failed
     - `/session-handoff` — update "Last Session Summary" in CLAUDE.md, verify all Working Rules are current, verify git is clean, print a "Ready for next session" block that a new Claude instance can read and immediately continue from
+
+---
+
+## Feature Checklist
+
+Every new feature must complete **all** items before the task is considered done. If any item is unchecked, the task is **not complete**.
+
+**Backend**
+- [ ] Model created; imported in `alembic/env.py`; `alembic revision --autogenerate` run; migration file reviewed and committed alongside model
+- [ ] Routes created with the correct auth dependency (`require_admin` / `require_editor` / `get_current_user`) declared before any business logic — never after
+- [ ] Service declares `logger = logging.getLogger(__name__)` at module level; all error paths use `logger.exception()` not `logger.error()` or `print()`
+- [ ] Alert rule added to `log_analyzer.py` covering the service's main failure mode (required if the service can fail independently or calls an external API)
+- [ ] `usage_service.log_api_call(service, endpoint, success, meta)` instrumented at every external API call site
+- [ ] Pydantic schemas created for all request/response types; no raw `dict` passed between route and service
+
+**Frontend**
+- [ ] Component placed in `components/` if it will be used in 2 or more places
+- [ ] Route added to `App.jsx` with correct lazy import and auth guard
+- [ ] Nav item added to the relevant layout sidebar (`AdminLayout`, `CmsLayout`, or `ReviewLayout`)
+- [ ] Any new admin layout header includes `<AlertControls />` (see Admin UI Standard)
+- [ ] React Query cache keys defined; mutations invalidate all affected query keys
+
+**Documentation**
+- [ ] CLAUDE.md updated: Completed section, Architecture section, API Reference (new routes), Data Model (new models), Next Steps (if new item identified)
+- [ ] REVIEW.md updated with session audit entry (even "No new findings — audit date: YYYY-MM-DD")
+- [ ] Architecture.jsx updated — all 4 tabs checked: Flow (new pipeline steps), Architecture (new layers/services), Guidelines (new commands), Standards (new rules)
+- [ ] `.claude/commands/` updated or new command created if a new repeatable CLI workflow was introduced
+- [ ] If a universal standard changed: `~/.claude/CLAUDE.md` and the relevant `~/.claude/commands/` file updated
+
+**Configuration & Quality**
+- [ ] Any new runtime-configurable value added to `settings_service.py DEFAULTS` + `Settings.jsx` UI group
+- [ ] Pre-commit checklist passed (`.claude/hooks/pre-commit.md`): no secrets, no unused imports, no `console.log`, no broken imports
+- [ ] All new routes tested manually (or via `pytest`); error paths verified to return correct HTTP status codes
+
+**Git**
+- [ ] Committed with `feat:` / `fix:` / `chore:` / `refactor:` prefix and descriptive message
+- [ ] `git push` completed; branch is clean
 
 ---
 
@@ -74,7 +123,7 @@ See the **📐 Standards** tab in the Architecture page for an interactive brows
 
 ```
 ~/.claude/
-  CLAUDE.md                     # Universal Working Rules 1–11 + code quality + security + health standards
+  CLAUDE.md                     # Universal Working Rules + code quality + security + health standards
   hooks/
     pre-task.md                 # Generic pre-task checklist (read context, git status, risk level)
     post-task.md                # Generic post-task checklist (code review, docs, commit)
@@ -85,14 +134,14 @@ See the **📐 Standards** tab in the Architecture page for an interactive brows
     image-fix.md                # Article image scan, classify, and fix procedure
     session-handoff.md          # End-of-session wrap-up and handoff block template
   commands/
-    pre-task.md                 # Thin wrapper → skills/session-handoff.md pre-task section
+    pre-task.md                 # Thin wrapper → hooks/pre-task.md
     post-task.md                # Thin wrapper → hooks/post-task.md
     pre-commit.md               # Thin wrapper → hooks/pre-commit.md
     code-review.md              # Thin wrapper → skills/code-review.md
     doc-sync.md                 # Thin wrapper → skills/doc-sync.md
     image-fix.md                # Thin wrapper → skills/image-fix.md
     session-handoff.md          # Thin wrapper → skills/session-handoff.md
-    new-project.md              # Full 8-step wizard for new project scaffold
+    new-project.md              # Full 9-step wizard for new project scaffold
     check-alerts.md             # Fetch + display unread alerts, thermometer status, fix suggestions
     run-log-analysis.md         # Run analyze_logs(db) on-demand; print rule results; insert alerts
     clear-alerts.md             # Delete alerts by level (all/info/warning/critical) with confirm guard
@@ -136,40 +185,6 @@ pytest
 pytest tests/test_auth.py                          # single file
 pytest tests/test_auth.py::test_register_user     # single test
 ```
-
----
-
-## Environment
-
-`backend/.env` — required keys:
-
-```
-DATABASE_URL=sqlite:///./platform.db
-SECRET_KEY=your-secret-key
-TAVILY_API_KEY=tvly-...
-GOOGLE_API_KEY=AIza...
-GOOGLE_CSE_ID=...
-ANTHROPIC_API_KEY=sk-ant-...
-UNSPLASH_ACCESS_KEY=...
-STABILITY_API_KEY=sk-...
-AI_REVIEW_THRESHOLD=0.5
-TRENDS_AUTO_SITE_LIMIT=3
-```
-
-If you add a new env var, add it to both `app/config.py` (pydantic-settings field) and `.env`.
-
-### API Key Cost Reference
-
-| Key | Required | Cost model | Without key |
-|-----|----------|-----------|-------------|
-| `ANTHROPIC_API_KEY` | **Yes** | $0.25/1M input + $1.25/1M output tokens (Haiku) | AI review disabled; articles stay pending indefinitely |
-| `TAVILY_API_KEY` | **Yes** | ~$0.004/search (estimated) | Scraper falls back to Google CSE only |
-| `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | **Yes** | Free ≤ 100 queries/day; $5/1000 thereafter | Scraper falls back to Tavily only |
-| `UNSPLASH_ACCESS_KEY` | **Yes** | Free (demo key: 50 req/hour) | Articles published without images; fallbacks used |
-| `STABILITY_API_KEY` | Optional | ~$0.04/image (≈ 1 credit/logo @ 1536×640) | SVG fallback logos generated offline instead |
-| `SECRET_KEY` | **Yes** | Free | JWT signing broken — never omit |
-
-All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usage`.
 
 ---
 
@@ -229,15 +244,15 @@ backend/
       trends_service.py # Google Trends RSS fetch → dedup → DB; AI site config
       usage_service.py  # log_api_call() — fire-and-forget telemetry for all 6 external APIs
       log_analyzer.py   # DB-based ALERT_RULES (articles stuck pending, scrape job failed, api_usage_log error rates) + log-buffer fallback for DB-down
-      alert_worker.py   # 5-min loop; InMemoryLogHandler (WARNING/ERROR from app.* loggers, deque 500) via APP_LOG_BUFFER singleton
+      settings_service.py # In-memory cache for PlatformSettings; seed_defaults on startup
     utils/
       sanitize.py       # HTML sanitizer blocking XSS / script injection
     workers/
-      scrape_worker.py  # Background loop (60s): runs due scrape jobs
-      review_worker.py  # Background loop (30s): AI review of pending articles
+      scrape_worker.py  # Background loop (interval from PlatformSettings): runs due scrape jobs
+      review_worker.py  # Background loop (interval from PlatformSettings): AI review of pending articles
       trends_worker.py  # Background loop (5h): fetches Google Trends per region
-      image_worker.py   # Startup pass + loop (6h): validates and fixes article images
-      alert_worker.py   # Background loop (5m): runs analyze_logs() → inserts Alert rows
+      image_worker.py   # Startup pass + loop (interval from PlatformSettings): validates and fixes article images
+      alert_worker.py   # Background loop (5m): runs analyze_logs() → inserts Alert rows; hosts InMemoryLogHandler
 ```
 
 ### Frontend (`frontend/src/`)
@@ -251,6 +266,8 @@ Three micro-apps sharing one Vite build at port 5173:
 | `/review/*` | Review queue | any authenticated user |
 
 Shared infra: `AuthContext` (JWT in localStorage), `DirectionContext` (RTL/LTR), `ThemeContext` (dark/light — persisted to localStorage, falls back to `admin_theme_default` platform setting), `@tanstack/react-query` for all API calls, axios client in `src/api/client.js`.
+
+All three layouts include `<AlertControls />` (HealthThermometer + AlertBell) in the header — see Admin UI Standard.
 
 **Review queue** (`apps/review/`) is split into:
 - `Dashboard.jsx` — orchestrator; owns `approveMut` (PATCH status=published) and `rejectMut` (PATCH status=removed); manages `previewId` and `confirmRejectId` state
@@ -271,8 +288,7 @@ Separate Vite app at port 5174+. Set `VITE_SITE_ID` in its `.env` to select whic
 
 - **5 templates:** A (Newspaper), B (Magazine), C (Blog), D (Cards), E (Sidebar)
 - `SiteContext` — fetches site + articles + categories; derives `siteKeywords` from `site.scrape_keywords` (job keywords from API) first, then category names, tagline words, DEFAULT_KEYWORDS; exposes via context
-- `utils/defaultImages.js` — `getDefaultImage(keywords, index)` cycles keywords by article ID; used as fallback when `main_image_url` is null
-- All templates use `article.main_image_url || getDefaultImage(siteKeywords, article.id)` — never a broken image
+- `utils/defaultImages.js` — `getDefaultImage(keywords, index, storedImages)` prefers `site.config.default_images`; returns `null` if none set (callers render `--color-primary` placeholder)
 - CSS custom properties for per-site brand colors, set dynamically from `site.config`
 - Full RTL support: `tailwindcss-rtl` + `dir={site.text_direction}` on root element
 - Pages: home (template router), `/article/:id`, `/category/:slug`, 404
@@ -280,14 +296,14 @@ Separate Vite app at port 5174+. Set `VITE_SITE_ID` in its `.env` to select whic
 ### Data Model
 
 - **User** — roles `admin | editor | viewer`, bcrypt password, JWT auth
-- **Site** — `domain` (unique), `template_id` (template-a…e), `config` JSON (colors), `language` (en/he/ar/fr), auto-derived `text_direction` (RTL for he/ar)
+- **Site** — `domain` (unique), `template_id` (template-a…e), `config` JSON (colors, logo_url, about, tagline, default_images, default_category_names), `language` (en/he/ar/fr), auto-derived `text_direction` (RTL for he/ar)
 - **Category** — scoped per site, URL `slug`
 - **Article** — belongs to Site + optional Category/editor. Status: `pending → published | removed`. Key fields: `content_html` (Text), `main_image_url`, `ai_score` (0–1), `ai_flags`, `is_pinned`, `pin_order`, `pinned_until` (nullable DateTime — timed feature; public API sorts these first), `reading_time_minutes` (@property, computed), `translated_from`, all SEO fields (`seo_title`, `seo_description`, `seo_keywords`)
 - **ScrapeJob** — `keywords` (JSON array), `language`, `frequency_minutes`, `category_rules`, `status`, `last_error`
 - **Analytics** — page-view events per site/article, `created_at` timestamp
 - **Trend** — keyword, region, language, score (rank-derived 0–1), trend_date (YYYY-MM-DD), status (`new → used | dismissed`), optional `site_id` FK when used to create a site
 - **AppSetting** — key-value table for persistent feature settings. Current key: `trends_fetch_region` (ISO code or `""` for worldwide)
-- **PlatformSetting** — typed key-value table for tunable runtime parameters. Fields: key (PK), value, value_type (string/float/int/bool), description, updated_by_id (FK User), updated_at. 22 seeded defaults in `settings_service.py DEFAULTS`: `ai_review_threshold`, `auto_publish_enabled`, `max_searches_per_job`, `min_paragraph_blocks`, `min_word_count`, `trends_fetch_interval_hours`, `trends_auto_site_limit`, `trends_auto_site_threshold` (now enforced in `create_site_from_trend()`), `admin_theme_default`, `scraper_tavily_max_results`, `scraper_google_max_results`, `blocked_scrape_domains`, `scrape_worker_interval_seconds`, `ai_review_input_char_limit`, `ai_review_max_tokens`, `default_images_per_site`, `image_max_candidate_pages`, `image_worker_interval_hours`, `image_audit_max_articles`, `trends_per_region`, `trends_default_scrape_frequency_minutes`, `review_worker_interval_seconds`
+- **PlatformSetting** — typed key-value table for tunable runtime parameters. Fields: key (PK), value, value_type (string/float/int/bool), description, updated_by_id (FK User), updated_at. 22 seeded defaults in `settings_service.py DEFAULTS`: `ai_review_threshold`, `auto_publish_enabled`, `max_searches_per_job`, `min_paragraph_blocks`, `min_word_count`, `trends_fetch_interval_hours`, `trends_auto_site_limit`, `trends_auto_site_threshold`, `admin_theme_default`, `scraper_tavily_max_results`, `scraper_google_max_results`, `blocked_scrape_domains`, `scrape_worker_interval_seconds`, `ai_review_input_char_limit`, `ai_review_max_tokens`, `default_images_per_site`, `image_max_candidate_pages`, `image_worker_interval_hours`, `image_audit_max_articles`, `trends_per_region`, `trends_default_scrape_frequency_minutes`, `review_worker_interval_seconds`
 - **ApiUsageLog** — per-call telemetry for all external APIs. Fields: id, service (slug), endpoint, timestamp (indexed), success (bool), meta (JSON blob for tokens/credits/etc.). Written by `usage_service.log_api_call()` — never raises. Migration `c3d4e5f6a7b8`.
 - **Alert** — system alert generated by log analyzer. Fields: id, level (critical/warning/info, indexed), title, message, source (indexed), is_read (bool, indexed), created_at (indexed), resolved_at (nullable). Migration `e2f3a4b5c6d7`. Hard-delete is acceptable (operational records, not content).
 
@@ -297,12 +313,13 @@ JWT issued at `/auth/login`. Claim `sub` = user ID (string), `role` = role value
 
 ### Scraper Engine
 
-`services/scraper.py`: keyword searches via Tavily (primary, provides `ai_score`) + Google CSE (secondary), deduplicates by URL (Tavily score wins), fetches full HTML via httpx with SSRF protection, saves new Articles. Max 10 URLs per job run.
+`services/scraper.py`: keyword searches via Tavily (primary, provides `ai_score`) + Google CSE (secondary), deduplicates by URL (Tavily score wins), fetches full HTML via httpx with SSRF protection, saves new Articles. Max results from PlatformSettings (`scraper_tavily_max_results`, `scraper_google_max_results`).
 
 - SSRF protection: scheme whitelist, RFC-1918 IP blocking, link-local/ULA IPv6 blocking
+- Domain blocklist: `blocked_scrape_domains` PlatformSetting (7 social domains by default)
 - Per-domain rate limiting (2s), max 5MB download, 15s timeout
 - HTML parser extracts semantic blocks → `content_html`
-- Quality gates: ≥3 paragraphs, ≥100 words
+- Quality gates: ≥3 paragraphs, ≥100 words (`min_paragraph_blocks`, `min_word_count` PlatformSettings)
 
 ### AI Review Engine
 
@@ -312,7 +329,7 @@ JWT issued at `/auth/login`. Claim `sub` = user ID (string), `role` = role value
 - Produces: rewritten `content_html`, `title`, `score` (0–1), `flags[]`, `seo_title`, `seo_description`, `seo_keywords`
 - Auto-detects source language; translates if source ≠ site language; sets `translated_from`
 - RTL-aware prompt hints for Hebrew / Arabic
-- After scoring: calls `image_service.enrich_article_images()` if `main_image_url` is null
+- After scoring: calls `validate_and_fix_article_image()` to ensure image is present and valid
 - On any error: article stays `pending` (safe to retry)
 
 ### Image Service
@@ -346,6 +363,7 @@ GET                    /cms/articles/stats
 GET|POST|PATCH|DELETE  /cms/categories
 
 GET|POST|DELETE        /scraper/jobs
+PATCH                  /scraper/jobs/{id}     # update keywords, frequency, language, category_rules
 POST                   /scraper/jobs/{id}/run
 
 GET    /public/sites/{id}               # includes scrape_keywords[] from site's ScrapeJobs
@@ -378,6 +396,7 @@ GET|PATCH  /admin/users
 POST       /admin/images/audit    # scan + fix broken/missing article images (admin)
 
 GET        /admin/alerts                   # list alerts with unread count (admin; filters: level, is_read)
+POST       /admin/alerts/test              # create a test critical alert to verify UI flow (admin)
 PATCH      /admin/alerts/read-all          # mark all unread alerts as read (admin)
 PATCH      /admin/alerts/{id}/read         # mark one alert as read (admin)
 DELETE     /admin/alerts/bulk              # bulk hard-delete by ID list (admin; body: {ids:[int]})
@@ -390,12 +409,49 @@ GET        /analytics
 
 ---
 
+## Environment
+
+`backend/.env` — required keys:
+
+```
+DATABASE_URL=sqlite:///./platform.db
+SECRET_KEY=your-secret-key
+TAVILY_API_KEY=tvly-...
+GOOGLE_API_KEY=AIza...
+GOOGLE_CSE_ID=...
+ANTHROPIC_API_KEY=sk-ant-...
+UNSPLASH_ACCESS_KEY=...
+STABILITY_API_KEY=sk-...
+AI_REVIEW_THRESHOLD=0.5
+TRENDS_AUTO_SITE_LIMIT=3
+```
+
+If you add a new env var: add it to both `app/config.py` (pydantic-settings field) and `.env`, then document it in the table below.
+
+### API Key Cost Reference
+
+| Key | Required | Cost model | Without key |
+|-----|----------|-----------|-------------|
+| `ANTHROPIC_API_KEY` | **Yes** | $0.25/1M input + $1.25/1M output tokens (Haiku) | AI review disabled; articles stay pending indefinitely |
+| `TAVILY_API_KEY` | **Yes** | ~$0.004/search (estimated) | Scraper falls back to Google CSE only |
+| `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | **Yes** | Free ≤ 100 queries/day; $5/1000 thereafter | Scraper falls back to Tavily only |
+| `UNSPLASH_ACCESS_KEY` | **Yes** | Free (demo key: 50 req/hour) | Articles published without images; fallbacks used |
+| `STABILITY_API_KEY` | Optional | ~$0.04/image (≈ 1 credit/logo @ 1536×640) | SVG fallback logos generated offline instead |
+| `SECRET_KEY` | **Yes** | Free | JWT signing broken — never omit |
+
+All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usage`.
+
+---
+
 ## Current Sites (DB)
 
 | ID | Name | Template | Language | Direction | Notes |
 |----|------|----------|----------|-----------|-------|
 | 1  | Shih Tzu (Hebrew) | template-b | Hebrew | RTL | Active scrape job |
 | 2  | Bonsai | template-b | English | LTR | Active scrape job |
+| 3  | White Noise Hub | template-b | English | LTR | Active |
+| 4  | Geometric Tattoo | template-b | English | LTR | Active |
+| 5  | Giulia Vecchio Central | template-b | English | LTR | Active |
 
 ---
 
@@ -413,122 +469,69 @@ GET        /analytics
 - All Article fields: `main_image_url`, `translated_from`, `is_pinned`, `pin_order`, `ai_score`, `ai_flags`, all SEO fields
 - Scraper: Tavily + Google CSE, SSRF protection, rate limiting, quality gates
 - AI review: Claude Haiku, structured output via tool_use, translation, RTL hints
-- Image service: Unsplash API enrichment post-AI-review
+- Image service: Unsplash API enrichment post-AI-review; dedup via photo-slug normalisation; up to 3 pages per query
 - All backend API routes working
-- Admin frontend: Sites CRUD, ScrapeJobs (run/delete/create), Users management, Architecture reference page
+- Admin frontend: Sites CRUD, ScrapeJobs (run/delete/create/edit), Users management, Architecture reference page
 - CMS Articles: list + filters (site/status/AI score/date), TipTap rich editor, SEO fields
 - CMS Categories: list, create, edit, delete (slug validation)
 - Review Queue: list, filters, sort, 30s refresh, approve/reject, full preview modal
 - Analytics Dashboard: stat cards, stacked bar chart, AI score histogram, page views line chart
 - Site renderer: all 5 templates (A–E), RTL support, per-site theming, default image fallbacks
-- `defaultImages.js` utility: cycles 5 Unsplash keywords by article ID for consistent fallbacks
-- `SiteContext` exposes `siteKeywords` derived from site name
-- All broken-image `onError` fallbacks across all templates, ArticleCard, ArticleDetail
-- `excerpt()` strips `content_html` (not dead `article.blocks` ref)
-- RTL-aware back arrow in ArticleDetail, "Read more" arrow in TemplateC
-- Auto-publish threshold set to 0.5 in config and .env
-- Google Trends feature: `Trend` model, `trends_service.py` (RSS-based fetch), `trends_worker.py` (5h), `/trends` routes, `Trends.jsx` dashboard, `/trends` slash command
-- Trends region selector: `AppSetting` key-value model persists `trends_fetch_region`; `GET/POST /trends/settings`; grouped region catalogue via `GET /trends/regions`; region dropdown + active badge in Trending tab
-- Trends Explore tab: `GET /trends/explore` (pytrends interest/countries/queries); `GET /trends/explore/site-config`; `POST /trends/explore/create-site`; ExplorePanel with recharts LineChart + BarChart + related queries + Create Site modal
-- Architecture page: `Architecture.jsx` at `/admin/architecture` — two-tab (Flow / Architecture) embedded reference diagram; pure React + Tailwind, no external libs; Flow tab shows full Trends + Content pipelines with decision node; Architecture tab shows 4 layered boxes (External Services → Backend → Frontend/Renderer → Database)
-- Platform Settings system: `PlatformSetting` ORM model (`platform_settings` table, typed key-value with value_type/description/updated_by_id); `settings_service.py` (in-memory cache, lazy load, seed_defaults on startup); `GET /settings` + `PATCH /settings/{key}` (admin only); `Settings.jsx` panel with 5 grouped sections (AI Review/Content Quality/Scraper/Trends/Interface); all hardcoded constants in scraper.py/ai_review.py/trends_service.py/trends_worker.py replaced with `settings_service.get()` calls; auto-publish logic in ai_review.py now correctly honours both threshold and `auto_publish_enabled`
-- Dark/Light mode: `ThemeContext.jsx` provides `isDark` + `toggleTheme`; persisted to `localStorage` under `admin_theme`; applies `dark` class to `<html>` for Tailwind class-based dark mode; falls back to `admin_theme_default` platform setting on first visit (result committed to localStorage immediately so remounts don't re-fetch); toggle button added to AdminLayout sidebar; `tailwind.config.js` updated with `darkMode: 'class'`; **persistence bug fixed (2026-03-15)**: API-set default now writes to localStorage; `useEffect` watching `isDark` always syncs both localStorage and DOM class; `toggleTheme` simplified to `setIsDark(prev => !prev)` (sync handled by the effect); `applyThemeClass()` also called synchronously in state initializer to prevent flash
-- Architecture page v2: updated `Architecture.jsx` — live stats bar (fetches articles + sites), clickable Flow nodes (show detail card), 6-layer Architecture tab (added Platform Settings layer), security badges, full dark mode support via `useTheme()`
-- `pinned_until` timed pinning: nullable `DateTime` on `Article`; Alembic migration `f6a7b8c9d0e1`; public sort: `pinned_until > now()` → `is_pinned` → chronological; `_pinned_until_active()` helper handles SQLite naive datetime; `pinned_until` in `ArticleCreate`, `ArticleUpdate`, `ArticleListResponse`
-- Reading time: `@property reading_time_minutes` on `Article` ORM (strips HTML, counts words ÷ 200 wpm, min 1); exposed via Pydantic `from_attributes`; `readingTime.js` in `site-renderer/src/utils/`; shown on all `ArticleCard` variants and `ArticleDetail`
-- TemplateB v2 (premium magazine): sticky scroll-aware header, hero ≥70vh with gradient + countdown badge (`PinnedCountdown` updates every 60s), spotlight 2-col row, 3-col article grid, `SiteFooter` with `site.config.about` / tagline / category links / "Powered by"
-- Related articles in `ArticleDetail`: 3 articles same category → same site fallback; client-side from `useSite().articles`; rendered as `ArticleCard` grid
-- SEO in `ArticleDetail`: `useEffect` sets `document.title`, upserts Open Graph + Twitter Card meta tags, injects/removes JSON-LD Article schema on mount/unmount
-- AI site config enrichment: `trends_service.py` `generate_site_config()` now produces `config.about`, `config.tagline`, `config.default_category_names`; stored in `site.config` JSON column
-- CMS pin management: "Pin" button in `Articles.jsx` opens `PinModal` with 1d/1w/1m duration selector (shows expiry date); `pinUntilMut` sends `PATCH` with ISO datetime; expiry badge shown in table row; "Unpin" clears both `pinned_until` and `is_pinned`
-- TemplateB hero height reduced: `h-40 md:h-56` Tailwind classes (was `minHeight: 72vh`)
-- `InfiniteFeed.jsx` — generic paginated feed component: `articles` + `renderItem` + `pageSize` (default 10) + `gridClassName`; IntersectionObserver auto-loads next page with 300px rootMargin; "Load more" button as manual fallback; grid and sentinel are separate DOM siblings so grid layout is unbroken. Used in TemplateB "More Stories" section (pageSize=9 for 3-col grid alignment)
-- `RelatedArticles.jsx` — standalone component that reads `articles` + `categoryMap` from `useSite()` directly; uses `Number(article.id)` for safe int comparison against list; same-category priority → site fallback; renders as `ArticleCard` grid
-- `Footer.jsx` — standalone footer component that reads from `useSite()`; renders on every page; `buildAboutFallback()` uses `siteKeywords` when `config.about` is empty; replaces the inline `SiteFooter` in TemplateB and is also rendered by `ArticleDetail`
-- `ArticleDetail.jsx` updated: inline related-articles and footer sections replaced with `<RelatedArticles>` and `<Footer>` components; footer now appears on all `/article/:id` pages
-- `SiteContext.jsx` siteKeywords enriched: builds from site name → `config.default_category_names` → loaded category names → tagline words (>4 chars) → generic `DEFAULT_KEYWORDS` fallbacks; deduped with `Set`
-- `defaultImages.js` DEFAULT_KEYWORDS changed from site-specific shih-tzu terms to generic `['nature', 'landscape', 'city', 'people', 'travel']`
-- **Sites admin v2 (`Sites.jsx`)**: redesigned table with stats columns — template badge (colour-coded per template), language + direction badges, article count (published/pending), active pin count (clickable opens PinnedModal), last scrape time + job status badge + error tooltip; Preview link (`http://localhost:${5173 + site.id}`) per site; inline "Run Now" button triggers `POST /scraper/jobs/{id}/run`; `getSiteStats` query with 15s refetch; `PinnedModal` fetches published articles, lists pinned ones with "Unpin" button
-- **SiteModal.jsx v2**: new "Content" section with tagline (80-char text input), about (300-char textarea), default_category_names (`TagInput` component — Enter/comma adds tag, Backspace removes, × per tag); "✦ Generate with AI" button calls `POST /sites/ai-preview` and backfills tagline/about/categories/colors/template; `aiLoading` + `aiError` state
-- **`services/sites.js` additions**: `getSiteStats()` → `GET /sites/stats`; `previewSiteConfig(name, language, keywords)` → `POST /sites/ai-preview`
-- **`POST /sites` backend enrichment**: route changed to `async def`; if `config.about` or `config.tagline` missing, calls `generate_site_config()` (best-effort, all exceptions caught + logged); after site save, auto-creates up to 5 `Category` rows from `config.default_category_names` (slugified, skips duplicates)
-- **`GET /sites/stats` backend**: aggregates article counts by status, active pin count (`is_pinned OR pinned_until > utcnow()`), and latest ScrapeJob info per site; registered before `/{site_id}` to avoid FastAPI path-param conflict
-- **`POST /sites/ai-preview` backend**: async route registered before `/{site_id}`; delegates to `generate_site_config(keyword, language)`; returns `SiteConfigPreview`
-- **Settings UI**: `admin_theme_default` renders as `<select>` (light/dark) instead of free-text input; controlled via `SELECT_OPTIONS` map in `Settings.jsx`; save button enabled for select-type settings
-- **Architecture.jsx FlowTab v2**: `FlowStep` component wraps `Node` with `GLOW_SHADOW` box-shadow on active; Trends pipeline moved to horizontal sub-flow bar at bottom; security badges row below flow; detail card still expands below diagram on click
-- **Architecture.jsx security visibility v2** (2026-03-16): (1) Architecture tab — new collapsible `LayerBox color="red"` Security Layer positioned between Backend and Platform Settings; 8 controls each showing icon, name, file, and what it protects; `LayerBox` gains `collapsible` prop and `red` color variant. (2) Guidelines tab — new "🔒 Security Guidelines" card listing all 8 security invariants from REVIEW.md with last audit date (2026-03-16) and open issues badge; "View REVIEW.md →" button links to existing doc viewer. (3) Flow tab — `SecMini` component renders tiny clickable red pills inline at relevant steps: SSRF + Rate Limit on scrape_worker, XSS + SQL Guard on articles-pending, JWT + RBAC on score-gate, JWT + RBAC on CMS review; clicking any badge opens the full security detail card (same StepDetail used by the bottom security bar)
-- **Automation layer** (2026-03-17): `.claude/hooks/pre-task.md` (read CLAUDE.md + REVIEW.md, git status, state task context, classify risk); `.claude/hooks/post-task.md` (code review, security check, update all 4 docs, commit + push); `.claude/hooks/pre-commit.md` (8-point checklist: no keys, no empty files, broken imports, auth decorators, try/except, Alembic migration, CLAUDE.md + REVIEW.md updated); `.claude/skills/code-review.md` (scan changed files, severity report, auto-fix critical); `.claude/skills/doc-sync.md` (sync CLAUDE.md/REVIEW.md/Architecture.jsx/.claude/commands/); `.claude/skills/image-fix.md` (scan and fix article images for a site by site_id); `.claude/skills/session-handoff.md` (verify rules, clean git, update Last Session Summary, print handoff block); Working Rules 1, 2, 10 updated to reference hooks; Rule 13 added for Available Skills; all 8 commands updated to reference relevant skills
-- **`POST /sites/{id}/ai-enrich`**: async route that fills missing tagline/about/default_category_names via Claude Haiku; auto-creates Category rows from result; requires admin; registered before `PATCH /{site_id}`
-- **`GET /sites/{id}/default-images`**: builds keyword list from site name + categories + tagline; calls Unsplash for 5 images; persists to `site.config.default_images`; returns `{site_id, images}`
-- **SiteModal.jsx**: yellow warning banner when editing site with missing tagline/about/categories; "Yes, fill with AI" calls `POST /sites/{id}/ai-enrich`; Default Images section — full 5-slot manager: per-slot thumbnail with hover controls (↺ Replace with Unsplash via DELETE+auto_fill, ✎ Set URL via PATCH, × Remove via DELETE+no_fill); empty slots show +/Auto-fill/Enter URL; top bar has "✦ Auto-fill empty" (POST /fill) and "↻ Refresh all" (GET) buttons; per-slot URL input with Set/✕ inline
-- **`defaultImages.js` updated**: `getDefaultImage(keywords, index, storedImages=null)` — prefers `storedImages` (from `site.config.default_images`) over keyword-based Unsplash redirects
-- **`SiteContext.jsx`**: exposes `siteDefaultImages` (from `site.config.default_images`, or null); `ArticleCard` uses it as third arg to `getDefaultImage`
-- **`POST /admin/images/audit`**: scans published articles for null/noise/broken images; HEAD-checks URLs with 5s timeout; calls Unsplash image service for replacements; returns `{total_inspected, missing, noise, broken, fixed, fix_failed, details[]}`; hard limit of 200 articles per run; registered in `main.py`
-- **Sites.jsx Image Audit**: "🖼 Image Audit" button in header; `auditImages()` service call; `AuditModal` shows summary stats + per-article issue list with before/after thumbnails
-- **Trend-based site category creation**: `create_site_from_trend()` in `trends_service.py` now auto-creates Category rows from `config.default_category_names` after site is flushed to DB (same logic as `POST /sites` route)
-- **`image_validator.py`** (`services/`): `is_valid_image_url(url)` — pattern check (noise RE) → trusted-CDN fast-path → HEAD request (5s timeout, follow_redirects=True) → validates content-type `image/*` and Content-Length > 5 KB; `validate_and_fix_article_image(article_id, current_url, keywords, site_defaults)` — retries up to 2 keyword variants via Unsplash, then falls back to `site.config.default_images`
-- **`image_worker.py`** (`workers/`): background task started at startup (10s delay) and every 6 hours; scans ALL published articles ordered nulls-first; skips valid images; fixes broken/missing via `validate_and_fix_article_image`; rate-limited to 1 article/second; registered in `main.py` lifespan alongside other workers
-- **`ai_review.py` image pipeline**: replaced simple `enrich_article_images` call with `validate_and_fix_article_image` — validates existing `main_image_url` first, retries with keyword variants, falls back to `site.config.default_images`; published articles never left without an image
-- **`GET /sites/{id}/default-images` improved**: appends "professional photography" to each keyword before querying Unsplash; validates each result with `is_valid_image_url` before saving; retries with bare keyword then Unsplash redirect fallback
-- **`POST /sites` auto-default-images**: after creating a site, if `config.default_images` is absent, fires `asyncio.create_task()` to fetch 5 curated images in the background (client not blocked)
-- **`defaultImages.js` simplified**: removed Tier 2 (keyword Unsplash redirect) and Tier 3 (HARDCODED_FALLBACKS) — `getDefaultImage()` now returns `null` when no `storedImages` are set; callers render a colour placeholder (site `--color-primary`) instead of a mismatched photo
-- **Bulk image fix run**: 63 published articles scanned on 2026-03-14; 22 fixed, 39 already valid, 2 failed (no Unsplash results); image_worker will retry on next cycle
-- **Image specificity overhaul** (2026-03-14):
-  - `GET /public/sites/{id}` returns `scrape_keywords[]` — aggregated from site's ScrapeJob rows, deduped, order preserved; `SitePublicResponse` schema extends `SiteResponse`
-  - `SiteContext.jsx` uses `site.scrape_keywords` as primary `siteKeywords` source (before category names / tagline / defaults); ensures Unsplash fallbacks are topic-specific (e.g. "bonsai tree" not "nature")
-  - `image_service.py` refactored: `_fetch_unsplash(article_id, query)` private helper; `enrich_article_images(article_id, keywords: str | list[str])` — when list, tries most-specific keyword first, broadens only on no-results
-  - `image_validator.py`: SVG URLs added to `_NOISE_RE` (SVGs are logos/graphics, not article photos); `validate_and_fix_article_image` simplified — passes keyword list directly to `enrich_article_images` (no more separate variant loop)
-  - `image_worker.py`: loads scrape-job keywords per site; `_is_mismatched_image(url, site_kws)` detects hardcoded fallback URLs (`source.unsplash.com/featured/?`) and cross-topic animal terms; articles with valid-but-mismatched images are now replaced; uses site scrape keywords as primary Unsplash search query
-  - Bulk fix re-run: SVG articles (WhatsApp1.svg) replaced with Unsplash bonsai photos; all 63 articles scanned, 2 additional fixed, 0 failed
-- Logo system: `services/logo_service.py` — async `generate_logo()` calls Stability AI SDXL (`stable-diffusion-xl-1024-v1-0`) at **1536×640** (landscape 2.4:1; SDXL constraint — target was 800×200/4:1 but not a valid SDXL pair; 1536×640 is the closest valid wide-landscape ratio); prompt: "Professional content website logo, horizontal format, minimalist brand icon, {topic} theme, {primary_color} accent color, transparent background PNG, clean premium design like BBC or TechCrunch, no text, no letters, symbolic icon only, high contrast"; SVG fallback for missing key or API error; display CSS: `width:auto; max-width:200px; height:50px; object-fit:contain` everywhere (SiteBrand.jsx renderer + admin Sites table); logos regenerated for all 5 sites; White Noise Hub brand colors fixed: primary `#f5f5f5` → `#1a1a2e` (deep navy), secondary `#4a90a4` → `#e94560` (vivid red)
-- Auto-categories: sites with <3 categories get 4-6 AI-generated categories via Claude Haiku; Hebrew sites get Hebrew category names with romanized slugs; Bonsai (6 cats), White Noise Hub (6 cats), Shih Tzu (5 Hebrew cats) created; tattoo site already had 5 categories
-- Auto article categorization: keyword-matching assigns each published article with `category_id=null` to the best-matching site category (score = matching words in title+seo_keywords); 89 of 91 uncategorized articles assigned; `ai_review.py` now enforces category assignment for all future reviewed articles
-- Scrape job editing: `PATCH /scraper/jobs/{id}` endpoint (keywords, language, frequency_minutes, category_rules); `ScrapeJobUpdate` schema with same validators as Create; `ScrapeJobModal` extended to edit mode (seeds from existing job, site field locked, submit calls `updateJob`); "Edit" button per row in `ScrapeJobs.jsx`
-- Tattoo site (id=4 "Geometric small tattoo") keywords updated — all 8 keywords now include the word "tattoo" (e.g. "Minimalist Geometric tattoo")
-- **Logo standards v2**: `logo_service.py` prompt updated to BBC/TechCrunch-style ("Professional content website logo, horizontal format, minimalist brand icon..."); dimensions changed from 1344×768 → 1536×640 (SDXL constraint — 800×200 target not a valid pair; 1536×640 is closest wide landscape); display CSS `max-width:200px; height:50px; object-fit:contain` in `SiteBrand.jsx` and admin `Sites.jsx`; White Noise Hub brand colors fixed `#f5f5f5` → `#1a1a2e` / `#4a90a4` → `#e94560`; all 5 site logos regenerated
-- **Hero/header fix**: TemplateB `HeroSection` height `h-40 md:h-56` → `min-h-[60vh] md:min-h-[75vh]` (160px was clipping the `text-4xl`/`text-6xl` h1 headline due to `overflow-hidden + flex items-end`); Templates A/D/E headers made `sticky top-0 z-40` for consistent nav behaviour; TemplateC left as-is (tall centered blog header)
-- **Image dedup** (`image_service.py`): `_fetch_unsplash_candidates()` fetches `per_page=10` and returns `list[str]`; `_unsplash_photo_key()` normalises CDN URLs to stable `photo-<hex>-<hex>` slug (Unsplash varies `ixid`/`ixlib` params across calls); `enrich_article_images()` accepts `excluded_urls: set[str]`; skips any candidate whose photo key is already in use on the same site; tries up to 3 pages before accepting last-resort URL; `validate_and_fix_article_image()` accepts and threads `excluded_urls`; `ai_review.py` collects existing site image URLs before each new article and passes as `excluded_urls` → every new article gets a unique photo
-- **Bulk dedup fix** (site 1): all 19 published Shih Tzu articles now have 19 unique Unsplash photos (previously 3 photos shared across 19 articles); fix used article-specific English queries derived from Hebrew titles + seo_keywords
-- **Code quality**: `import json` moved to module level in `ai_review.py` (was inside `ai_review_and_enrich()`)
-- **End-of-session audit** (2026-03-14): full security + code review; Architecture.jsx updated with Stability AI, logo_service, image_validator, image_worker (Workers stat 3→4), /admin/images/audit route, sticky header + hero height notes in site renderer; REVIEW.md appended with new session findings
-- **Dark mode persistence fix** (2026-03-15): `ThemeContext.jsx` — API-set default now commits to localStorage; `useEffect` watching `isDark` always syncs both DOM class and localStorage; `applyThemeClass()` called synchronously in state initializer to prevent flash; `toggleTheme` simplified
-- **API Usage & Costs dashboard** (2026-03-15): `ApiUsageLog` ORM model + Alembic migration `c3d4e5f6a7b8`; `services/usage_service.py` `log_api_call()` sync helper (fire-and-forget, never raises); `GET /admin/api-usage` route aggregates per-service stats + cost estimates + 7-day sparklines; `ApiUsage.jsx` frontend with service cards, status badges, recharts sparklines, summary cost bar; services instrumented: Anthropic (token counts in meta), Unsplash, Tavily, Google CSE, Google Trends, Stability AI; nav item "API Costs 💰" added to AdminLayout
-- **Admin nav reorganization** (2026-03-15): `AdminLayout.jsx` sidebar refactored from flat `NAV_ITEMS` to `NAV_SECTIONS` grouped array with 4 sections — PLATFORM (Dashboard, API Costs), CONTENT PIPELINE (Trends, Sites, Scrape Jobs, Articles ✍️→/cms/articles, Review Queue ✅→/review), PUBLISHING (Categories 🏷️→/cms/categories, Pin Management→/admin/sites), SYSTEM (Users, Architecture, Settings); cross-app links use plain `Link` (not NavLink); uppercase gray section headers rendered as dividers; old "Switch to CMS/Review" footer links removed (cross-app access now inline in nav)
-- **CMS nav reorganization** (2026-03-15): `CmsLayout.jsx` sidebar refactored to `NAV_SECTIONS` with 2 sections — CONTENT (Articles ✍️, Categories 🏷️), TOOLS (Pin Management 📌→/cms/articles, Review Queue ✅→/review external); same pattern as AdminLayout
-- **Review nav reorganization** (2026-03-15): `ReviewLayout.jsx` sidebar refactored to `NAV_SECTIONS` with REVIEW section — Pending Queue ✅ (NavLink /review), Published 📰 (→/cms/articles?status=published external), Removed 🗑️ (→/cms/articles?status=removed external)
-- **Editor's Pick toggle in ArticleDetail** (2026-03-15): `ArticleDetail.jsx` — replaced raw "Pin" checkbox card with "Editor's Pick" sidebar card; `PinModal` component inlined (same duration picker as in Articles.jsx); when not pinned: "⭐ Set as Editor's Pick" indigo button; when pinned: amber highlight card showing "📌 Featured" + expiry date + "Unpin" button; `pinUntilMut` sends `PATCH` with both `is_pinned` and `pinned_until`; modal closes on success via `onSuccess` callback
-- **Reusability refactor** (2026-03-15): extracted 5 shared items from page-level duplicates → `components/AiScoreBadge.jsx` (was in 4 files, `midThreshold` prop), `components/StatusBadge.jsx` (2 files), `components/PinModal.jsx` + exported `PIN_DURATIONS` (2 files; `pinLabel` prop), `utils/formatDate.js` (4 files; `showTime`/`showYear` opts); `apps/review/ConfirmDialog.jsx` deleted — `review/Dashboard.jsx` now imports from `components/ConfirmDialog` (z bumped to z-[60] to float above preview modal); Working Rule 9 added to CLAUDE.md; `/refactor` slash command created
-- **Working Rule #11 — Configuration discipline** (2026-03-15): business-logic values → PlatformSettings; infrastructure safety constants stay as code. Added to CLAUDE.md.
-- **Architecture Guidelines tab** (2026-03-15): third tab "📋 Guidelines" added to `Architecture.jsx` — cards for CLAUDE.md, REVIEW.md, .claude/commands/ (all 8 slash commands), backend/.env, app/config.py, PlatformSettings (DB); "View" buttons for CLAUDE.md/REVIEW.md fetch content via `GET /admin/docs/{filename}` and show in a scrollable modal; `GET /admin/docs/{filename}` backend route (admin only, strict filename allowlist: CLAUDE.md + REVIEW.md only); stats bar Settings 9 → 21; ArchTab workers updated to show "interval from PlatformSettings"; ArchTab settings grid expanded to 21 keys
-- **Hardcoded constants → PlatformSettings** (2026-03-15): all P0 + P1 constants migrated to `settings_service.py DEFAULTS` (12 new keys); all workers (`scrape_worker`, `review_worker`, `image_worker`) read interval from settings on each loop iteration so admin changes take effect without restart; `scraper.py` Tavily/Google result limits now from settings; `ai_review.py` input char limit + max tokens now from settings; `image_service.py` max candidate pages now from settings; `images.py` audit hard cap kept at 1000 (Query param ceiling), effective limit = `min(limit, settings_service.get("image_audit_max_articles"))`; `trends_service.py` per-region count + default scrape frequency now from settings; `trends_auto_site_threshold` dead setting wired into `create_site_from_trend()` — rejects trends below threshold before site limit check; `Settings.jsx` GROUPS reorganized from 5 → 6 sections: AI & Content Quality, Scraper, Images, Trends, Workers, Interface
+- Google Trends feature: `Trend` model, `trends_service.py`, `trends_worker.py` (5h), `/trends` routes, `Trends.jsx`
+- Trends region selector: `AppSetting` persists `trends_fetch_region`; grouped region catalogue; region dropdown
+- Trends Explore tab: pytrends integration; recharts LineChart + BarChart; related queries; Create Site modal
+- Architecture page v3: 4-tab React+Tailwind page (Flow, Architecture, Guidelines, Standards); live stats bar; clickable security badges; Standards tab with global/project config browser + working rules + health standard
+- Platform Settings system: 22 seeded `PlatformSetting` defaults; in-memory cache; `GET/PATCH /settings`; 6-group `Settings.jsx` UI; all hardcoded business logic constants replaced
+- Dark/Light mode: `ThemeContext.jsx`; persisted to localStorage; falls back to `admin_theme_default` platform setting; no flash on load
+- `pinned_until` timed pinning: nullable DateTime on Article; public API sorts pinned-until-active first; `PinModal` with 1d/1w/1m picker; expiry badge in CMS table
+- Reading time: `@property reading_time_minutes`; shown on all ArticleCard variants and ArticleDetail
+- TemplateB v2: sticky header; hero ≥60vh; `InfiniteFeed` for "More Stories"; `RelatedArticles` component; `Footer` component
+- SEO in ArticleDetail: Open Graph + Twitter Card meta tags; JSON-LD Article schema injected/removed on mount/unmount
+- AI site config enrichment: `generate_site_config()` produces about/tagline/category names; stored in `site.config` JSON
+- SiteModal v2: tagline/about/categories + AI-generate button; Default Images 5-slot manager (per-slot Replace/Set URL/Remove; Auto-fill; Refresh all)
+- Logo system: Stability AI SDXL 1536×640; SVG fallback; `logo_service.py`; display CSS `max-width:200px; height:50px`
+- Auto-categories and auto-article-categorisation: `ai_review.py` enforces category assignment for all future articles
+- Shared components: `AiScoreBadge`, `StatusBadge`, `PinModal`, `ConfirmDialog`; `utils/formatDate.js`
+- API Usage & Costs dashboard: `ApiUsageLog` model + migration `c3d4e5f6a7b8`; `usage_service.py`; `ApiUsage.jsx` with sparklines; all 6 services instrumented
+- Nav reorganization: `NAV_SECTIONS` grouped structure in AdminLayout, CmsLayout, ReviewLayout
+- Editor's Pick toggle in ArticleDetail: amber highlight when pinned; inline PinModal; expiry display
+- `blocked_scrape_domains` PlatformSetting: 7 social domains blocked by default; subdomain-aware check in scraper
+- Automation layer: `.claude/hooks/` (pre-task, post-task, pre-commit); `.claude/skills/` (code-review, doc-sync, image-fix, session-handoff); `~/.claude/` global equivalents
+- Architecture Standards tab: global + project config browser; 13 working rules colour-coded; 9-step new-project checklist; Health & Alerting Standard section
+- Alert system: `Alert` model + migration `e2f3a4b5c6d7`; DB-based `log_analyzer.py` (7 ALERT_RULES); `alert_worker.py` (5m loop + `InMemoryLogHandler`); `/admin/alerts` CRUD routes including `POST /test` and bulk delete
+- HealthThermometer + AlertBell + AlertControls: integrated into AdminLayout, CmsLayout, ReviewLayout headers
+- Alert management slash commands: `/check-alerts`, `/run-log-analysis`, `/clear-alerts` in both `.claude/commands/` and `~/.claude/commands/`
+- Working Rules 2, 3, 4, 5 clarified; Feature Checklist added; section order improved (2026-03-18)
 
-### 🔲 Next Steps (priority order)
+---
 
-0. **API Usage dashboard — data population**: `api_usage_log` table exists and all services are instrumented; the dashboard will show zeros until new API calls are made. Run a scrape job or trigger AI review to populate data.
+## Next Steps
 
-1. **Bulk actions in CMS** — checkboxes partially exist in `Articles.jsx` but need backend: `PATCH /cms/articles/bulk` accepting array of IDs + action (publish/remove/reassign-category).
+Priority order for upcoming sessions:
 
-2. **Logo upgrade: DALL-E 3 / Recraft** — Stability AI SDXL doesn't support 800×200 (4:1); the closest valid pair is 1536×640. DALL-E 3 (`dall-e-3`) accepts arbitrary sizes and returns PNG with transparency natively. Recraft v3 is another option with vector output. Both would produce proper banner-ratio logos. Swap `logo_service.py` AI call if `OPENAI_API_KEY` is available.
+0. **Alert system verification** — run `alembic upgrade head` (migration `e2f3a4b5c6d7`), restart backend, open admin → click thermometer → `POST /admin/alerts/test` → confirm bell badge, dropdown, and Alerts page all update; delete test alert via "Delete all" in bell dropdown.
 
-3. **Pin order drag-and-drop** — `is_pinned` / `pin_order` fields exist on Article; `pinned_until` timed pinning done; still need drag-and-drop ordering UI for editorial `is_pinned` / `pin_order`.
+1. **Bulk actions in CMS** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + wire up existing checkboxes in `Articles.jsx`; after building run `/doc-sync`.
 
-4. **InfiniteFeed for other templates** — TemplateB uses InfiniteFeed; Templates A/C/D/E still render all articles at once. Consider applying InfiniteFeed to their article lists too.
+2. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then manually add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`. (REVIEW.md R4)
 
-5. **Analytics enhancement** — per-article page views, per-site traffic trends, unique visitor estimation. `POST /analytics/track` is already called by the renderer; data is collected but not fully surfaced.
+3. **API Usage dashboard — data population** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to populate data.
 
-6. **Social media trends** — currently fetches from Google Trends RSS only. Add Twitter/X trending topics (via unofficial scrape or RapidAPI), Reddit hot posts, or TikTok trending sounds as additional trend sources.
+4. **Logo upgrade: DALL-E 3 / Recraft** — DALL-E 3 accepts arbitrary sizes (true 800×200 possible). Swap `logo_service.py` AI call if `OPENAI_API_KEY` is available.
 
-7. **Tests** — pytest infrastructure set up, auth tests exist. Need: scraper tests, AI review tests (mocked Anthropic client), image service tests (mocked Unsplash), public API integration tests.
+5. **Pin order drag-and-drop** — `is_pinned` / `pin_order` fields exist; `pinned_until` timed pinning done; need drag-and-drop ordering UI.
 
-8. **Postgres migration** — SQLite for dev; switch `DATABASE_URL` to RDS Postgres for production. No code changes needed — Alembic handles the schema. Also add DB indexes (see REVIEW.md R4).
+6. **InfiniteFeed for other templates** — TemplateB uses InfiniteFeed; Templates A/C/D/E still render all articles at once.
 
-9. **AWS deployment** — target EC2/ECS + RDS Postgres + S3 + CloudFront. See `/deploy` slash command for checklist.
+7. **Analytics enhancement** — per-article page views, per-site traffic trends, unique visitor estimation.
 
-10. **Rate limiting** — `POST /analytics/track` is unauthenticated and has no rate limiting; add slowapi or nginx rate limit before production. `POST /auth/login` and `POST /auth/register` similarly unprotected. (REVIEW.md R1)
+8. **Social media trends** — add Twitter/X, Reddit, or TikTok as additional trend sources.
 
-11. **DOMPurify on client** — `content_html` is sanitized server-side but rendered with `dangerouslySetInnerHTML` in both `site-renderer` and the review preview modal. Add DOMPurify as a defence-in-depth layer. (REVIEW.md R2)
+9. **Tests** — need: scraper tests, AI review tests (mocked Anthropic client), image service tests (mocked Unsplash), public API integration tests.
 
-12. **VITE_API_URL** — frontend `api/client.js` now reads `import.meta.env.VITE_API_URL` (falls back to `localhost:8000`). Set this in `frontend/.env.production` before any deployment.
+10. **Postgres migration** — switch `DATABASE_URL` to RDS Postgres for production; add DB indexes (REVIEW.md R4).
+
+11. **Production hardening** — slowapi rate limiting on auth + analytics routes (REVIEW.md R1); DOMPurify on `dangerouslySetInnerHTML` (REVIEW.md R2); `VITE_API_URL` in `frontend/.env.production`; update CORS origins in `main.py` (REVIEW.md R3).
 
 ---
 
@@ -542,20 +545,42 @@ GET        /analytics
 
 ---
 
-## Code Review (March 2026)
+## Key Design Decisions
 
-Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.md` for the complete findings.
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| Content storage | Single `content_html` Text field | Simpler than block model; AI rewrites full HTML |
+| AI model | Claude Haiku (`claude-haiku-4-5-20251001`) | Cheap, fast, structured via `tool_use` |
+| Auto-publish threshold | 0.5 (PlatformSetting) | Below → stays pending for human review |
+| Reject action | `PATCH status=removed` | Soft delete preserves audit trail |
+| Default images | `site.config.default_images` (5 curated Unsplash photos) | Specific, high-quality; falls back to `--color-primary` placeholder |
+| Image dedup | `excluded_urls` set + photo-ID normalisation | Unsplash varies `ixid`/`ixlib` params; photo slug is the only stable ID |
+| Site renderer | Separate Vite app per site | Clean isolation; `VITE_SITE_ID` selects site at build time |
+| RTL support | `dir={site.text_direction}` on root + `tailwindcss-rtl` | Covers all templates and components automatically |
+| Trends score | `1.0 - rank * 0.09` (rank 0–9) | Simple deterministic score; pytrends doesn't expose raw volume |
+| Trends dedup | `(keyword, trend_date)` unique pair | Same keyword on a new day is a new row; UI shows "Seen before" badge |
+| Auto-site limit | `TRENDS_AUTO_SITE_LIMIT=3` in PlatformSettings | Prevents uncontrolled site sprawl; enforced server-side |
+| Trend regions | US, GB, IL, FR, SA → en/en/he/fr/ar | Covers all 4 supported site languages |
+| Logo dimensions | 1536×640 (SDXL-valid) not 800×200 (target) | Stability AI SDXL requires approved dimension pairs |
+| Alert rules | DB queries (`check: "db"` / `check: "api_log"`) not log-file regex | DB state is authoritative; log-pattern rules are last resort (DB-down only) |
+| Worker intervals | All from PlatformSettings | Admin can tune without restart; no hardcoded sleep values in workers |
 
-### Critical issues fixed
+---
+
+## Project History
+
+### Critical Issues Fixed (March 2026)
+
+Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for complete findings.
 
 | Issue | File | Fix |
 |-------|------|-----|
 | Self-registration privilege escalation | `app/routes/auth.py` | `register` now forces `role=viewer` regardless of request body |
 | `connect_args` Postgres incompatibility | `app/database.py` | Only applied when DATABASE_URL starts with `sqlite` |
-| Weak HTML sanitizer (missing svg/math/meta/template/srcdoc) | `app/utils/sanitize.py` | Added to denylist; improved comments explaining limitation |
+| Weak HTML sanitizer (missing svg/math/meta/template/srcdoc) | `app/utils/sanitize.py` | Added to denylist; improved comments |
 | Hardcoded `localhost:8000` in frontend | `frontend/src/api/client.js` | Now reads `VITE_API_URL` env var with localhost fallback |
 
-### Security invariants confirmed
+### Security Invariants Confirmed (March 2026)
 
 - JWT `none` algorithm: SAFE — `decode_access_token` pins `algorithms=[settings.algorithm]`
 - API keys: SAFE — all read from `Settings` (env vars); none hardcoded
@@ -563,27 +588,6 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 - SQL injection: SAFE — all queries use SQLAlchemy ORM (parameterised)
 - CORS: SAFE — locked to localhost ports (dev); update for production
 - Auth on routes: SAFE — all non-public routes require `get_current_user` or higher
-
----
-
-## Key Design Decisions
-
-| Decision | Choice | Reason |
-|----------|--------|--------|
-| Content storage | Single `content_html` Text field | Simpler than block model; AI rewrites full HTML |
-| AI model | Claude Haiku (`claude-haiku-4-5-20251001`) | Cheap, fast, structured via `tool_use` |
-| Auto-publish threshold | 0.5 | Below → stays pending for human review |
-| Reject action | `PATCH status=removed` | Soft delete preserves audit trail |
-| Default images | Unsplash `source.unsplash.com/featured/?{keyword}` | No storage needed, always returns an image |
-| Image cycling | `article.id % len(keywords)` | Consistent per-article, deterministic, no randomness |
-| Site renderer | Separate Vite app per site | Clean isolation; `VITE_SITE_ID` selects site at build time |
-| RTL support | `dir={site.text_direction}` on root + `tailwindcss-rtl` | Covers all templates and components automatically |
-| Trends score | `1.0 - rank * 0.09` (rank 0–9) | Simple deterministic score; pytrends doesn't expose raw volume |
-| Trends dedup | `(keyword, trend_date)` unique pair | Same keyword on a new day is a new row; UI shows "Seen before" badge |
-| Auto-site limit | `TRENDS_AUTO_SITE_LIMIT=3` in config | Prevents uncontrolled site sprawl; enforced server-side in service layer |
-| Trend regions | US, GB, IL, FR, SA → en/en/he/fr/ar | Covers all 4 supported site languages |
-| Image dedup | `excluded_urls` set + photo-ID normalisation | Unsplash returns same photo with different ixid/ixlib params; photo slug is the only stable ID |
-| Logo dimensions | 1536×640 (SDXL-valid) not 800×200 (target) | Stability AI SDXL requires approved dimension pairs; 1536×640 is the closest valid wide-landscape ratio |
 
 ---
 
@@ -598,72 +602,34 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `/platform/REVIEW.m
 | HealthThermometer SVG component | `components/HealthThermometer.jsx` — 14×40px SVG, 4 severity levels (green/blue/orange/red), gradient fill rises with severity, Tailwind pulse animation when non-green, custom tooltip, fetches `/admin/alerts?is_read=false&limit=100` every 30s, hides on 403 | ✅ Done |
 | AlertControls wrapper | `components/AlertControls.jsx` — shared state wrapper for HealthThermometer + AlertBell; clicking thermometer opens bell dropdown | ✅ Done |
 | AlertBell controlled/uncontrolled state | `components/AlertBell.jsx` — refactored to support both controlled (`isOpen`/`onOpenChange`) and uncontrolled (internal useState) modes; added bulk delete buttons in dropdown footer ("Delete all info" / "Delete all") | ✅ Done |
-| AdminLayout integration | `apps/admin/AdminLayout.jsx` — replaced standalone `<AlertBell>` with `<AlertControls>` immediately after "Admin" title text; removed "Alerts 🔔" from System nav section | ✅ Done |
+| AdminLayout integration | `apps/admin/AdminLayout.jsx` — replaced standalone `<AlertBell>` with `<AlertControls>`; removed "Alerts 🔔" from System nav section | ✅ Done |
 | CmsLayout integration | `apps/cms/CmsLayout.jsx` — added header bar with "CMS" title + `<AlertControls>` | ✅ Done |
 | ReviewLayout integration | `apps/review/ReviewLayout.jsx` — added header bar with "Review" title + `<AlertControls>` | ✅ Done |
 | Alerts.jsx bulk delete UI | `apps/admin/Alerts.jsx` — checkbox per alert row, select-all toggle, "Delete selected (N)" button, "Delete all info" button, "Delete all" button; all mutations invalidate `alerts`/`alerts-bell`/`alerts-thermometer` caches | ✅ Done |
 | Backend bulk delete routes | `routes/admin/alerts.py` — `DELETE /admin/alerts/bulk` (Pydantic body `{ids:[int]}`), `DELETE /admin/alerts/all` (?level=); literal routes registered before `/{alert_id}` param route | ✅ Done |
 | Google CSE alert cooldown fix | `services/log_analyzer.py` — `google_cse_403` cooldown 120 → 360 minutes (6 hours) | ✅ Done |
-| **Log analyzer → DB-based rules** | `services/log_analyzer.py` — replaced all log-pattern rules with DB queries: `articles_stuck_pending` (>30 min), `scrape_job_failed`, `no_articles_saved_2h`; API error rules now query `api_usage_log` table; `db_connection_error` kept as log-pattern fallback (can't query DB when DB is down) | ✅ Done |
-| **InMemoryLogHandler** | `workers/alert_worker.py` — `InMemoryLogHandler` class (`WARNING`/`ERROR`, `app.*` loggers, `deque(500)`); `APP_LOG_BUFFER` singleton; `install_app_log_handler()` called at startup in `main.py` | ✅ Done |
-| **`POST /admin/alerts/test`** | `routes/admin/alerts.py` — creates a test `critical` alert to verify full alert UI flow; admin-gated; registered before `/{alert_id}` DELETE | ✅ Done |
-| **Alert management slash commands** | `.claude/commands/check-alerts.md` (thermometer status + grouped table + fix suggestions + actions); `.claude/commands/run-log-analysis.md` (on-demand analyze_logs, rule-by-rule summary, inserts alerts); `.claude/commands/clear-alerts.md` (level-scoped delete with critical confirm guard); mirrored to `~/.claude/commands/` as generic versions | ✅ Done |
-| **`~/.claude/CLAUDE.md` Health & Alerting Standard** | Added available alert skills table: `/check-alerts`, `/run-log-analysis`, `/clear-alerts` | ✅ Done |
-| Global standards updated | `~/.claude/CLAUDE.md` — Admin UI Standard section; `~/.claude/commands/new-project.md` — Step 8 (health indicator setup) | ✅ Done |
-| Working Rules 11+12 | `CLAUDE.md` — Rule 11 (configuration discipline), Rule 12 (no empty files) | ✅ Done |
-| Automation layer — hooks | `.claude/hooks/pre-task.md`, `post-task.md`, `pre-commit.md` | ✅ Done |
-| Automation layer — skills | `.claude/skills/code-review.md`, `doc-sync.md`, `image-fix.md`, `session-handoff.md` | ✅ Done |
-| Working Rules 1, 2, 10, 13 updated | `CLAUDE.md` — rules now reference hooks and skills explicitly | ✅ Done |
-| Slash commands updated | All 8 commands reference relevant skills; `/newsite` and `/refactor` gain post-action skill steps | ✅ Done |
-| Architecture.jsx GuidelinesTab — Skills card | `Architecture.jsx` — new skills card alongside commands card; `SKILLS` constant added | ✅ Done |
-| `ApiUsageLog` ORM model + migration | `models/api_usage_log.py`, `models/__init__.py`, migration `c3d4e5f6a7b8` | ✅ Done |
-| `usage_service.py` | `services/usage_service.py` — `log_api_call()` fire-and-forget, never raises | ✅ Done |
-| `GET /admin/api-usage` route | `routes/admin/api_usage.py`, `main.py` — per-service cost + sparkline stats | ✅ Done |
-| API service instrumentation | `ai_review.py`, `image_service.py`, `scraper.py`, `logo_service.py`, `trends_service.py` — all 6 external services instrumented | ✅ Done |
-| `ApiUsage.jsx` dashboard | `apps/admin/ApiUsage.jsx`, `App.jsx`, `AdminLayout.jsx` — service cards, sparklines, cost totals | ✅ Done |
-| Nav reorganization (3 apps) | `AdminLayout.jsx`, `CmsLayout.jsx`, `ReviewLayout.jsx` — `NAV_SECTIONS` grouped structure, cross-app links inline | ✅ Done |
-| Editor's Pick toggle | `apps/cms/ArticleDetail.jsx` — inline PinModal, amber highlight when pinned, expiry display | ✅ Done |
-| Reusability refactor | `components/AiScoreBadge`, `StatusBadge`, `PinModal`, `utils/formatDate`; deleted `review/ConfirmDialog` duplicate | ✅ Done |
-| Working Rule 9 + `/refactor` command | `CLAUDE.md`, `.claude/commands/refactor.md` | ✅ Done |
-| Default Images Manager (backend) | `routes/sites/sites.py` — `PATCH /{id}/default-images`, `POST /{id}/default-images/fill`, `DELETE /{id}/default-images/{index}` | ✅ Done |
-| Default Images Manager (frontend) | `SiteModal.jsx`, `services/sites.js` — 5-slot grid, per-slot Replace/Set URL/Remove controls, Auto-fill + Refresh all | ✅ Done |
-| `defaultImages.js` simplified | `site-renderer/src/utils/defaultImages.js` — removed Tier 2 (keyword redirect) + Tier 3 (hardcoded fallbacks); returns `null` when no storedImages | ✅ Done |
-| `ArticleCard.jsx` null-image handling | `site-renderer/src/components/ArticleCard.jsx` — `--color-primary` colour placeholder; admin Edit overlay link | ✅ Done |
-| Hardcoded constants → PlatformSettings | `settings_service.py` (+12 new keys), `scraper.py`, `ai_review.py`, `image_worker.py`, `review_worker.py`, `scrape_worker.py`, `image_service.py`, `images.py`, `trends_service.py`, `sites.py`, `Settings.jsx` (5→6 groups) | ✅ Done |
-| `trends_auto_site_threshold` wired | `trends_service.py` `create_site_from_trend()` — threshold check before site limit; previously seeded but never read | ✅ Done |
-| Working Rule #11 | `CLAUDE.md` — configuration discipline: business-logic values → PlatformSettings; infrastructure constants stay as code | ✅ Done |
-| `GET /admin/docs/{filename}` | `routes/admin/docs.py`, `main.py` — serves CLAUDE.md or REVIEW.md; strict allowlist; admin only | ✅ Done |
-| Architecture Guidelines tab | `Architecture.jsx` — `GuidelinesTab` with 6 cards (CLAUDE.md+REVIEW.md viewable via modal, commands list, .env, config.py, PlatformSettings link); stats bar 9→21; ArchTab settings 9→21 keys; all 4 workers show "interval from PlatformSettings" | ✅ Done |
-| **Architecture Flow — interactive security layer** | `Architecture.jsx` — 8 clickable `FlowStep` nodes replace static badges; each expands to show file, description, and concrete attack/defence example; `StepDetail` extended with `file` + `example` fields | ✅ Done |
-| **Architecture security visibility v2** | `Architecture.jsx` — collapsible Security Layer in Architecture tab (8 controls with file+protects); Security Guidelines card in Guidelines tab (8 invariants, last audit date, REVIEW.md link); `SecMini` inline badges in Flow tab at scrape_worker/articles-pending/score-gate/cms-review | ✅ Done |
-| **Global `~/.claude/` configuration** | `~/.claude/CLAUDE.md` (universal rules 1–11 + code quality + security); `~/.claude/hooks/` (pre-task, post-task, pre-commit); `~/.claude/skills/` (code-review, doc-sync, image-fix, session-handoff); `~/.claude/commands/` (8 thin wrappers + new-project wizard) | ✅ Done |
-| **`GET /admin/docs/project/` + `/global/`** | `routes/admin/docs.py` — two new routes with strict allowlists serving `.claude/` project files and `~/.claude/` global files; registered before `/{filename}` to avoid path-param conflict | ✅ Done |
-| **Architecture Standards tab** | `Architecture.jsx` — 4th tab `📐 Standards` with `StandardsTab` component; 4 sections: Global Config (~/.claude/), Project Config (.claude/), Working Rules (13 colour-coded cards), New Project Checklist (8 steps); `DocViewModal` shared component; `GLOBAL_CONFIG_FILES`, `PROJECT_CONFIG_FILES`, `WORKING_RULES`, `RULE_COLORS`, `NEW_PROJECT_STEPS` constants | ✅ Done |
-| **`blocked_scrape_domains` PlatformSetting** | `settings_service.py` (+1 key, type: string, default: 7 social domains); `scraper.py` — domain-block check after duplicate check, before SSRF (subdomain-aware); `Settings.jsx` — textarea control in Scraper group with comma↔newline conversion | ✅ Done |
-| **Alert system** | `models/alert.py` + migration `e2f3a4b5c6d7`; `services/log_analyzer.py` (LOG_BUFFER ring buffer + 7 ALERT_RULES); `workers/alert_worker.py` (5m loop); `routes/admin/alerts.py` (CRUD + bulk delete); `components/AlertBell.jsx` (dropdown, mark-read, delete-all); `apps/admin/Alerts.jsx` (full page + filters + pagination) | ✅ Done |
-| **HealthThermometer + AlertControls** | `components/HealthThermometer.jsx` (14×40 SVG, 4 severity levels, pulse, tooltip, controlled open); `components/AlertControls.jsx` (shared wrapper — thermometer + bell with shared state); integrated into `AdminLayout`, `CmsLayout`, `ReviewLayout` headers | ✅ Done |
-| **Bulk alert delete** | `DELETE /admin/alerts/bulk` (body `{ids:[int]}`); `DELETE /admin/alerts/all` (?level=); checkbox selection + "Delete selected" + "Delete all info" + "Delete all" in Alerts.jsx; same buttons in AlertBell dropdown footer; all mutations invalidate `alerts`, `alerts-bell`, `alerts-thermometer` query caches | ✅ Done |
-| **Alerts removed from sidebar nav** | `AdminLayout.jsx` System section — "Alerts 🔔" nav item removed; alerts accessed only via HealthThermometer → AlertBell click | ✅ Done |
-| **Google CSE alert cooldown fix** | `log_analyzer.py` `google_cse_403` rule: `cooldown_minutes` 120 → 360 (6 hours) | ✅ Done |
-| **Global ~/.claude standards updated** | `~/.claude/CLAUDE.md` — Admin UI Standard section added (HealthThermometer requirement); `~/.claude/commands/new-project.md` — Step 8 added (admin health indicator setup) | ✅ Done |
+| Log analyzer → DB-based rules | `services/log_analyzer.py` — replaced all log-pattern rules with DB queries: `articles_stuck_pending` (>30 min), `scrape_job_failed`, `no_articles_saved_2h`; API error rules now query `api_usage_log` table; `db_connection_error` kept as log-pattern fallback | ✅ Done |
+| InMemoryLogHandler | `workers/alert_worker.py` — `InMemoryLogHandler` class (`WARNING`/`ERROR`, `app.*` loggers, `deque(500)`); `APP_LOG_BUFFER` singleton; `install_app_log_handler()` called at startup in `main.py` | ✅ Done |
+| `POST /admin/alerts/test` | `routes/admin/alerts.py` — creates a test `critical` alert to verify full alert UI flow; admin-gated | ✅ Done |
+| Alert management slash commands | `.claude/commands/check-alerts.md`, `run-log-analysis.md`, `clear-alerts.md`; mirrored to `~/.claude/commands/` as generic versions | ✅ Done |
+| Architecture.jsx sync | `SLASH_COMMANDS` updated 8→11; `GLOBAL_CONFIG_FILES` + `PROJECT_CONFIG_FILES` updated; `WORKING_RULES` Rule 2 body updated; `NEW_PROJECT_STEPS` Step 9 added; Standards tab Section 5 (Health & Alerting) added | ✅ Done |
+| Working Rules 2–5 clarified | `CLAUDE.md` — Rule 2 adds global doc locations; Rule 3 adds Environment section requirement; Rule 4 adds 300-line limit + logger requirement; Rule 5 adds logger.exception requirement | ✅ Done |
+| Feature Checklist added | `CLAUDE.md` — new `## Feature Checklist` section with 20 items across Backend/Frontend/Docs/Config/Git | ✅ Done |
+| Section order improved | `CLAUDE.md` — Environment moved after API Reference; Next Steps extracted as own section; Code Review merged into Project History; section order matches desired sequence | ✅ Done |
 
 ### Current known issues / state
 
-- **Alert system workers not yet running** — `alert_worker` is registered in `main.py` lifespan; the alerts table needs `alembic upgrade head` first. After migration, the worker starts automatically on backend restart.
+- **Alert system workers not yet running** — alerts table needs `alembic upgrade head` first. After migration, worker starts automatically on backend restart.
 - **API Usage dashboard shows zeros** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to start populating it.
 - **Sites without `default_images`** will show coloured `--color-primary` placeholders. Run `/image-fix [site_id]` after populating default images via admin Site modal → "✦ Auto-fill empty".
 - **Hook enforcement is manual** — `.claude/hooks/` are instruction documents, not shell hooks. See REVIEW.md R19.
-- **5 sites in DB** — Shih Tzu (id=1, Hebrew RTL), Bonsai (id=2, English LTR), White Noise Hub (id=3, English), Geometric Tattoo (id=4, English), Giulia Vecchio Central (id=5, English).
-- **`blocked_scrape_domains`** — seeded to DB on next server restart (`seed_defaults` is idempotent); existing DB rows are untouched.
 
 ### Exact next steps to continue from
 
-1. Run `alembic upgrade head` to apply migration `e2f3a4b5c6d7` (alerts table), then restart backend — alert_worker will start generating alerts within 5 minutes
-2. Open admin → click thermometer → `POST /admin/alerts/test` to create a test critical alert and confirm full UI flow (bell badge, dropdown, Alerts page all update)
-3. After confirming test alert visible: delete it via "Delete all" in the bell dropdown
-3. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + checkbox UI in `Articles.jsx` (checkboxes partially exist); after building run `/doc-sync`
-4. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`
-5. Run a scrape job → confirm API Costs dashboard shows live Tavily + Anthropic call data → run `/image-fix [site_id]` to clean up any off-topic images
-6. **Logo upgrade** — swap `logo_service.py` to DALL-E 3 if `OPENAI_API_KEY` is provided; supports arbitrary sizes so true 800×200 becomes possible
-7. **Production hardening** — slowapi rate limiting on auth + analytics routes (REVIEW.md R1); DOMPurify on `dangerouslySetInnerHTML` (R2); `VITE_API_URL` in `frontend/.env.production`; update CORS origins in `main.py` (R3)
-8. At end of each session, invoke `/session-handoff` to keep this summary current
+1. Run `alembic upgrade head` to apply migration `e2f3a4b5c6d7` (alerts table), restart backend
+2. Open admin → click thermometer → `POST /admin/alerts/test` → confirm full UI flow
+3. Delete test alert via "Delete all" in bell dropdown
+4. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend + wire up checkboxes in `Articles.jsx`; run `/doc-sync` after
+5. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add status/site_id/analytics indexes
+6. Run a scrape job → confirm API Costs dashboard shows live data
+7. At end of each session, invoke `/session-handoff` to keep this summary current
