@@ -805,3 +805,63 @@ The HealthThermometer provides always-visible system health status across all th
 ### New findings
 
 None. All changes are safe DB queries or logging infrastructure. No new external API calls, no new auth surface, no schema changes.
+
+---
+
+## Standards Update — 2026-03-18
+
+**Scope:** Documentation and standards propagation for the completed health monitoring system.
+
+### Health & Alerting System — Completed Feature Summary
+
+The platform now has a complete observability layer. This section documents it as a reference for future maintenance and for the `/new-project` wizard.
+
+#### Architecture
+
+```
+app.* loggers
+      │
+      ├── InMemoryLogHandler (alert_worker.py)
+      │     WARNING/ERROR from app.* loggers → deque(500) = APP_LOG_BUFFER
+      │
+      └── _LogBuffer (log_analyzer.py)
+            all loggers, all levels → deque(2000) = LOG_BUFFER
+                  │
+                  └── analyze_logs(db)  ← called every 5m by alert_worker_loop()
+                        │  evaluates ALERT_RULES (7 rules, cooldown-gated):
+                        │    db rules:      articles_stuck_pending, scrape_job_failed, no_articles_saved_2h
+                        │    api_log rules: anthropic_errors, unsplash_errors, google_cse_errors
+                        │    log rules:     db_connection_error (DB-down fallback only)
+                        │
+                        └── Alert rows (DB) ← read by /admin/alerts routes
+                                │
+                                ├── AlertBell.jsx — dropdown, unread badge, mark-read, bulk-delete
+                                └── HealthThermometer.jsx — 14×40px SVG, 4 severity levels,
+                                      pulse when non-green, tooltip, click opens bell
+```
+
+#### Coverage status
+
+| Service / Worker | Alert rule | Status |
+|-----------------|-----------|--------|
+| scrape_worker | `scrape_job_failed` (DB) | ✅ Covered |
+| scrape_worker | `no_articles_saved_2h` (DB) | ✅ Covered |
+| review_worker | `articles_stuck_pending` (DB, >30 min, ≥5) | ✅ Covered |
+| Anthropic (ai_review.py) | `anthropic_errors` (api_log, ≥3 fails/30m) | ✅ Covered |
+| Unsplash (image_service.py) | `unsplash_errors` (api_log, ≥5 fails/60m) | ✅ Covered |
+| Google CSE (scraper.py) | `google_cse_errors` (api_log, ≥3 fails/6h) | ✅ Covered |
+| database | `db_connection_error` (log-pattern fallback) | ✅ Covered |
+| trends_worker | No dedicated alert rule yet | ⚠ Gap — add rule for RSS fetch failures |
+| image_worker | No dedicated alert rule yet | ⚠ Gap — add rule for persistent image fix failures |
+
+#### Standards codified (2026-03-18)
+
+- `~/.claude/CLAUDE.md` — new **Health & Alerting Standard** section: logging requirements, alert coverage, API tracking, test endpoint
+- `CLAUDE.md` Working Rule 2 — added 3-point service checklist: (a) alert rule, (b) logger.exception, (c) usage tracking
+- `~/.claude/commands/new-project.md` Step 8 — full alert system setup procedure (4 sub-steps: model+routes, log_analyzer+worker, frontend components, verification)
+- `Architecture.jsx` — `log_analyzer.py` added to Services layer; `/admin/alerts` added to Routes; `Alerts 🔔` added to Admin frontend; HealthThermometer+AlertBell description added to Frontend layer
+
+#### Known gaps (non-blocking)
+
+- **R27** — `trends_worker` and `image_worker` have no dedicated alert rules. Both are low-risk (non-critical pipelines), but a `scrape_job_type_failed` or `image_worker_consecutive_failures` rule would improve coverage.
+- **R28** — `APP_LOG_BUFFER` (InMemoryLogHandler) is currently not directly consumed by any alert rule — it exists for future use and external observability. Consider a rule that counts recent ERROR records from `APP_LOG_BUFFER` as a catch-all for unexpected failures not yet covered by specific DB rules.

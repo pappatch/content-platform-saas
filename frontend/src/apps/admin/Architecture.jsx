@@ -793,6 +793,7 @@ function ArchTab() {
                 '/admin/users',
                 '/admin/images/audit',
                 '/admin/api-usage (cost dashboard)',
+                '/admin/alerts (CRUD · bulk-delete · test)',
                 '/admin/docs/{filename}   # docs viewer',
                 '/analytics (track · read)',
               ].map(r => <div key={r} className={routeStyle}>{r}</div>)}
@@ -812,6 +813,7 @@ function ArchTab() {
                   ['logo_service.py',    'Stability AI SDXL 1536×640 · SVG fallback'],
                   ['trends_service.py',  'RSS fetch · pytrends explore · AI config'],
                   ['usage_service.py',   'log_api_call() · fire-and-forget · all 6 services'],
+                  ['log_analyzer.py',    'DB + api_log rules → alert dicts · cooldown tracking'],
                   ['settings_service.py','in-memory cache · typed key-value'],
                 ].map(([name, desc]) => (
                   <div key={name} className={svcStyle}>
@@ -1007,7 +1009,7 @@ function ArchTab() {
             {[
               {
                 group: 'Admin',
-                items: ['Dashboard', 'Sites', 'Scrape Jobs', 'Trends', 'Users', 'Architecture', 'Settings ⚙️', 'API Costs 💰'],
+                items: ['Dashboard', 'Sites', 'Scrape Jobs', 'Trends', 'Users', 'Architecture', 'Settings ⚙️', 'API Costs 💰', 'Alerts 🔔'],
               },
               {
                 group: 'CMS',
@@ -1028,7 +1030,13 @@ function ArchTab() {
               </div>
             ))}
           </div>
-          <div className="flex flex-wrap gap-1">
+          <div className={`mt-2 text-[9px] leading-snug ${isDark ? 'text-sky-400' : 'text-sky-500'}`}>
+            <span className="font-semibold">Shared health components:</span>{' '}
+            HealthThermometer (14×40px SVG · 4 severity levels · pulse animation) +
+            AlertBell (unread badge · dropdown · mark-read · bulk-delete) —
+            present in all 3 layout headers; thermometer hides on 403 for non-admin.
+          </div>
+          <div className="flex flex-wrap gap-1 mt-2">
             {['React', 'Vite', 'react-query', 'axios', 'recharts', 'TipTap', 'JWT → localStorage', 'ThemeContext'].map(t => (
               <TechPill key={t} label={t} />
             ))}
