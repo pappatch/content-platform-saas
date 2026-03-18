@@ -359,6 +359,7 @@ POST                   /sites/{id}/default-images/fill  # fill empty slots via U
 DELETE                 /sites/{id}/default-images/{index}  # remove one slot, auto-fill replacement (admin)
 
 GET|POST|PATCH|DELETE  /cms/articles
+PATCH                  /cms/articles/bulk     # bulk action: publish|remove|reassign-category (editor+)
 GET                    /cms/articles/stats
 GET|POST|PATCH|DELETE  /cms/categories
 
@@ -502,6 +503,7 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 - HealthThermometer + AlertBell + AlertControls: integrated into AdminLayout, CmsLayout, ReviewLayout headers
 - Alert management slash commands: `/check-alerts`, `/run-log-analysis`, `/clear-alerts` in both `.claude/commands/` and `~/.claude/commands/`
 - Working Rules 2, 3, 4, 5 clarified; Feature Checklist added; section order improved (2026-03-18)
+- **Bulk actions in CMS** (2026-03-18): `PATCH /cms/articles/bulk` endpoint — atomic transaction, `BulkArticleRequest` schema (ids, action: publish|remove|reassign-category, category_id), `BulkActionResult` response (updated/failed/errors); `require_editor` auth; category-site mismatch counted as failed. `Articles.jsx` sticky `BulkToolbar` component with Publish/Remove/Assign Category (dropdown picker) / Clear; indeterminate checkbox in header; selected-row highlight; `Toast` component for success/error feedback; `bulkUpdateArticles()` added to `services/articles.js`
 
 ---
 
@@ -511,7 +513,7 @@ Priority order for upcoming sessions:
 
 0. **Alert system verification** — run `alembic upgrade head` (migration `e2f3a4b5c6d7`), restart backend, open admin → click thermometer → `POST /admin/alerts/test` → confirm bell badge, dropdown, and Alerts page all update; delete test alert via "Delete all" in bell dropdown.
 
-1. **Bulk actions in CMS** — `PATCH /cms/articles/bulk` backend endpoint (action: publish/remove/reassign-category) + wire up existing checkboxes in `Articles.jsx`; after building run `/doc-sync`.
+1. ~~**Bulk actions in CMS**~~ ✅ Done — `PATCH /cms/articles/bulk` (publish/remove/reassign-category); sticky bulk toolbar in Articles.jsx with Publish/Remove/Assign Category/Clear; toast feedback.
 
 2. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then manually add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`. (REVIEW.md R4)
 

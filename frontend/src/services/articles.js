@@ -14,3 +14,6 @@ export const updateArticle = (id, data) =>
 
 export const removeArticle = (id) =>
   api.delete(`/cms/articles/${id}`)
+
+export const bulkUpdateArticles = (ids, action, category_id = null) =>
+  api.patch('/cms/articles/bulk', { ids, action, ...(category_id != null && { category_id }) }).then((r) => r.data)

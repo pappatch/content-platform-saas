@@ -873,3 +873,32 @@ app.* loggers
 - `.claude/commands/clear-alerts.md` — project-specific: level-scoped hard-delete with critical confirmation guard
 - `~/.claude/commands/` — all three commands mirrored as generic versions adaptable to any project using the Health & Alerting Standard
 - `~/.claude/CLAUDE.md` Health & Alerting Standard — added skills table `/check-alerts`, `/run-log-analysis`, `/clear-alerts` as the prescribed way to manage alerts (over ad-hoc DB queries)
+
+---
+
+## Audit — 2026-03-18 (Bulk CMS Actions)
+
+### Changes reviewed
+- `backend/app/schemas/article.py` — `BulkArticleRequest` + `BulkActionResult` schemas
+- `backend/app/routes/cms/articles.py` — `PATCH /bulk` endpoint
+- `frontend/src/apps/cms/Articles.jsx` — BulkToolbar, Toast, bulk mutation
+- `frontend/src/services/articles.js` — `bulkUpdateArticles()`
+
+### Security review
+- Auth: `require_editor` on bulk route ✅ (same as all other write routes in this file)
+- Input validation: `BulkArticleRequest` validates ids not empty, max 500, action is Literal, category_id required for reassign-category via `@model_validator` ✅
+- Cross-resource access: no per-user article scoping — consistent with existing `update_article` / `delete_article` routes which also allow any editor to modify any article ✅
+- Category-site mismatch: validated per-article in the loop; mismatches counted as failed (not silently applied) ✅
+- Atomic transaction: single `db.commit()` after all mutations; `db.rollback()` on unexpected exception ✅
+- No SQL injection: all queries via ORM ✅
+- No new env vars, no new models, no migrations required ✅
+
+### Code quality
+- `logger = logging.getLogger(__name__)` declared at module level ✅
+- All error paths use `logger.exception()` ✅
+- No unused imports ✅
+- No `console.log` in frontend ✅
+- No hardcoded business logic values ✅
+- No alert rule needed: bulk action failures are surfaced as HTTP 400/422/500 to the caller — not a background service ✅
+
+### No new findings — all items clean.

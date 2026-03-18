@@ -781,7 +781,8 @@ function ArchTab() {
               {[
                 '/auth (register · login · me)',
                 '/sites (CRUD)',
-                '/cms/articles (CRUD · stats)',
+                '/cms/articles (CRUD · stats · bulk)',
+                '/cms/articles/bulk (PATCH — publish · remove · reassign-category)',
                 '/cms/categories (CRUD)',
                 '/scraper/jobs (CRUD · run)',
                 '/trends (list · fetch)',
@@ -1013,7 +1014,7 @@ function ArchTab() {
               },
               {
                 group: 'CMS',
-                items: ['Articles', 'Article Editor', 'Categories'],
+                items: ['Articles', 'BulkToolbar', 'Toast', 'Article Editor', 'Categories'],
               },
               {
                 group: 'Review',

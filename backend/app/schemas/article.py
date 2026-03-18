@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel
+from typing import Literal, Optional
+from pydantic import BaseModel, field_validator, model_validator
 from app.models.article import ArticleStatus
 
 
@@ -73,3 +73,32 @@ class ArticleDetailResponse(ArticleListResponse):
 
 # Keep ArticleResponse as an alias so public.py still works without changes
 ArticleResponse = ArticleDetailResponse
+
+
+class BulkArticleRequest(BaseModel):
+    """Request body for PATCH /cms/articles/bulk."""
+    ids: list[int]
+    action: Literal["publish", "remove", "reassign-category"]
+    category_id: Optional[int] = None
+
+    @field_validator("ids")
+    @classmethod
+    def ids_not_empty(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("ids must not be empty")
+        if len(v) > 500:
+            raise ValueError("Cannot bulk-update more than 500 articles at once")
+        return v
+
+    @model_validator(mode="after")
+    def category_required_for_reassign(self) -> "BulkArticleRequest":
+        if self.action == "reassign-category" and self.category_id is None:
+            raise ValueError("category_id is required for reassign-category action")
+        return self
+
+
+class BulkActionResult(BaseModel):
+    """Response body for PATCH /cms/articles/bulk."""
+    updated: int
+    failed: int
+    errors: list[str]
