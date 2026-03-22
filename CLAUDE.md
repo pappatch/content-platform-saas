@@ -595,33 +595,21 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 ## Last Session Summary
 
-**Date:** 2026-03-18
+**Date:** 2026-03-22
 
 ### What was built this session
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| HealthThermometer SVG component | `components/HealthThermometer.jsx` — 14×40px SVG, 4 severity levels (green/blue/orange/red), gradient fill rises with severity, Tailwind pulse animation when non-green, custom tooltip, fetches `/admin/alerts?is_read=false&limit=100` every 30s, hides on 403 | ✅ Done |
-| AlertControls wrapper | `components/AlertControls.jsx` — shared state wrapper for HealthThermometer + AlertBell; clicking thermometer opens bell dropdown | ✅ Done |
-| AlertBell controlled/uncontrolled state | `components/AlertBell.jsx` — refactored to support both controlled (`isOpen`/`onOpenChange`) and uncontrolled (internal useState) modes; added bulk delete buttons in dropdown footer ("Delete all info" / "Delete all") | ✅ Done |
-| AdminLayout integration | `apps/admin/AdminLayout.jsx` — replaced standalone `<AlertBell>` with `<AlertControls>`; removed "Alerts 🔔" from System nav section | ✅ Done |
-| CmsLayout integration | `apps/cms/CmsLayout.jsx` — added header bar with "CMS" title + `<AlertControls>` | ✅ Done |
-| ReviewLayout integration | `apps/review/ReviewLayout.jsx` — added header bar with "Review" title + `<AlertControls>` | ✅ Done |
-| Alerts.jsx bulk delete UI | `apps/admin/Alerts.jsx` — checkbox per alert row, select-all toggle, "Delete selected (N)" button, "Delete all info" button, "Delete all" button; all mutations invalidate `alerts`/`alerts-bell`/`alerts-thermometer` caches | ✅ Done |
-| Backend bulk delete routes | `routes/admin/alerts.py` — `DELETE /admin/alerts/bulk` (Pydantic body `{ids:[int]}`), `DELETE /admin/alerts/all` (?level=); literal routes registered before `/{alert_id}` param route | ✅ Done |
-| Google CSE alert cooldown fix | `services/log_analyzer.py` — `google_cse_403` cooldown 120 → 360 minutes (6 hours) | ✅ Done |
-| Log analyzer → DB-based rules | `services/log_analyzer.py` — replaced all log-pattern rules with DB queries: `articles_stuck_pending` (>30 min), `scrape_job_failed`, `no_articles_saved_2h`; API error rules now query `api_usage_log` table; `db_connection_error` kept as log-pattern fallback | ✅ Done |
-| InMemoryLogHandler | `workers/alert_worker.py` — `InMemoryLogHandler` class (`WARNING`/`ERROR`, `app.*` loggers, `deque(500)`); `APP_LOG_BUFFER` singleton; `install_app_log_handler()` called at startup in `main.py` | ✅ Done |
-| `POST /admin/alerts/test` | `routes/admin/alerts.py` — creates a test `critical` alert to verify full alert UI flow; admin-gated | ✅ Done |
-| Alert management slash commands | `.claude/commands/check-alerts.md`, `run-log-analysis.md`, `clear-alerts.md`; mirrored to `~/.claude/commands/` as generic versions | ✅ Done |
-| Architecture.jsx sync | `SLASH_COMMANDS` updated 8→11; `GLOBAL_CONFIG_FILES` + `PROJECT_CONFIG_FILES` updated; `WORKING_RULES` Rule 2 body updated; `NEW_PROJECT_STEPS` Step 9 added; Standards tab Section 5 (Health & Alerting) added | ✅ Done |
-| Working Rules 2–5 clarified | `CLAUDE.md` — Rule 2 adds global doc locations; Rule 3 adds Environment section requirement; Rule 4 adds 300-line limit + logger requirement; Rule 5 adds logger.exception requirement | ✅ Done |
-| Feature Checklist added | `CLAUDE.md` — new `## Feature Checklist` section with 20 items across Backend/Frontend/Docs/Config/Git | ✅ Done |
-| Section order improved | `CLAUDE.md` — Environment moved after API Reference; Next Steps extracted as own section; Code Review merged into Project History; section order matches desired sequence | ✅ Done |
+| Bulk actions in CMS — backend | `backend/app/schemas/article.py` — `BulkArticleRequest` (Pydantic v2: `@field_validator` for ids, `@model_validator` for category_required_for_reassign), `BulkActionResult`; `backend/app/routes/cms/articles.py` — `PATCH /bulk` (require_editor, atomic transaction, per-article error tolerance, category-site mismatch counted as failed, registered before `/{article_id}`) | ✅ Done |
+| Bulk actions in CMS — frontend | `frontend/src/apps/cms/Articles.jsx` — sticky `BulkToolbar` (indigo, `sticky top-0 z-20`), select-all with indeterminate state, per-row checkboxes, selected-row highlight, Publish / Remove (ConfirmDialog) / Assign Category (dropdown with outside-click dismiss) / Clear; `Toast` component (auto-dismiss 3500ms); `frontend/src/services/articles.js` — `bulkUpdateArticles()` | ✅ Done |
+| Architecture.jsx sync | Routes list: `/cms/articles/bulk` added; CMS Frontend layer: `BulkToolbar` + `Toast` added | ✅ Done |
+| CLAUDE.md deep audit + feature checklist | Working Rules 2–5 rewritten; `## Feature Checklist` section added (20 items); section order restructured; Next Steps extracted as own section | ✅ Done |
+| Architecture.jsx — alert system sync | `SLASH_COMMANDS` 8→11; `GLOBAL_CONFIG_FILES` + `PROJECT_CONFIG_FILES` updated; Rule 2 enforcement language; Step 9 in NEW_PROJECT_STEPS; Health & Alerting Standard section in Standards tab | ✅ Done |
 
 ### Current known issues / state
 
-- **Alert system workers not yet running** — alerts table needs `alembic upgrade head` first. After migration, worker starts automatically on backend restart.
+- **Alert system workers not yet running** — alerts table needs `alembic upgrade head` (migration `e2f3a4b5c6d7`) first. After migration, worker starts automatically on backend restart.
 - **API Usage dashboard shows zeros** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to start populating it.
 - **Sites without `default_images`** will show coloured `--color-primary` placeholders. Run `/image-fix [site_id]` after populating default images via admin Site modal → "✦ Auto-fill empty".
 - **Hook enforcement is manual** — `.claude/hooks/` are instruction documents, not shell hooks. See REVIEW.md R19.
@@ -629,9 +617,8 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 ### Exact next steps to continue from
 
 1. Run `alembic upgrade head` to apply migration `e2f3a4b5c6d7` (alerts table), restart backend
-2. Open admin → click thermometer → `POST /admin/alerts/test` → confirm full UI flow
+2. Open admin → click thermometer → `POST /admin/alerts/test` → confirm full UI flow (bell badge, dropdown, Alerts page)
 3. Delete test alert via "Delete all" in bell dropdown
-4. **Bulk CMS actions** — `PATCH /cms/articles/bulk` backend + wire up checkboxes in `Articles.jsx`; run `/doc-sync` after
-5. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then add status/site_id/analytics indexes
-6. Run a scrape job → confirm API Costs dashboard shows live data
-7. At end of each session, invoke `/session-handoff` to keep this summary current
+4. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then manually add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at` (REVIEW.md R4)
+5. Run a scrape job → confirm API Costs dashboard shows live data
+6. At end of each session, invoke `/session-handoff` to keep this summary current
