@@ -423,6 +423,7 @@ GOOGLE_CSE_ID=...
 ANTHROPIC_API_KEY=sk-ant-...
 UNSPLASH_ACCESS_KEY=...
 STABILITY_API_KEY=sk-...
+SERPAPI_KEY=
 AI_REVIEW_THRESHOLD=0.5
 TRENDS_AUTO_SITE_LIMIT=3
 ```
@@ -438,6 +439,7 @@ If you add a new env var: add it to both `app/config.py` (pydantic-settings fiel
 | `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | **Yes** | Free ≤ 100 queries/day; $5/1000 thereafter | Scraper falls back to Tavily only |
 | `UNSPLASH_ACCESS_KEY` | **Yes** | Free (demo key: 50 req/hour) | Articles published without images; fallbacks used |
 | `STABILITY_API_KEY` | Optional | ~$0.04/image (≈ 1 credit/logo @ 1536×640) | SVG fallback logos generated offline instead |
+| `SERPAPI_KEY` | Optional | Free tier: 100 searches/month (serpapi.com, no credit card) | Trends Explore + Trending Now fall back to pytrends / RSS |
 | `SECRET_KEY` | **Yes** | Free | JWT signing broken — never omit |
 
 All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usage`.
@@ -505,6 +507,7 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 - Working Rules 2, 3, 4, 5 clarified; Feature Checklist added; section order improved (2026-03-18)
 - **Bulk actions in CMS** (2026-03-18): `PATCH /cms/articles/bulk` endpoint — atomic transaction, `BulkArticleRequest` schema (ids, action: publish|remove|reassign-category, category_id), `BulkActionResult` response (updated/failed/errors); `require_editor` auth; category-site mismatch counted as failed. `Articles.jsx` sticky `BulkToolbar` component with Publish/Remove/Assign Category (dropdown picker) / Clear; indeterminate checkbox in header; selected-row highlight; `Toast` component for success/error feedback; `bulkUpdateArticles()` added to `services/articles.js`
 - **Google Trends rate-limit hardening** (2026-04-13): `trends_service.py` — `_is_rate_limit_error()` helper (detects `TooManyRequestsError`, `requests.HTTPError` 429, and "429" string fallback); `_explore_keyword_sync` wraps all pytrends calls in 3-attempt exponential-backoff retry (2/4/8s delays); random 1–3s human-like jitter before each attempt; raises `ValueError("Google Trends is temporarily unavailable — try again in a few minutes")` after exhausted retries; `retries=0` on `TrendReq` to avoid double-retry. `routes/trends.py` — `explore_keyword_route` catches `ValueError` separately to forward the clear message verbatim; fallback handler upgraded from `logger.error` to `logger.exception`.
+- **SerpAPI integration for Google Trends** (2026-04-13): `trends_service.py` — `_serpapi_explore_keyword_sync()` (single HTTP call to `engine=google_trends`, parses interest_over_time/top_countries/related_queries from JSON, `log_api_call("serpapi",...)` telemetry, 429→clear ValueError); `_serpapi_fetch_trending_sync()` (single call to `engine=google_trends_trending_now`, traffic-score via `_parse_traffic_score`); `explore_keyword()` dispatches to SerpAPI when SERPAPI_KEY set, pytrends fallback with warning otherwise; `fetch_and_store_trends()` dispatches to SerpAPI when SERPAPI_KEY + specific geo set, RSS fallback for worldwide or no key. `config.py` — `serpapi_key: Optional[str] = None`. `SERPAPI_KEY=` added to `.env`.
 
 ---
 
@@ -602,8 +605,8 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Google Trends rate-limit hardening | `backend/app/services/trends_service.py` — `_is_rate_limit_error()` helper; `_explore_keyword_sync` with 3-attempt exponential-backoff retry (2/4/8s); random 1–3s jitter per attempt; clear `ValueError` on exhaustion; `retries=0` on `TrendReq` | ✅ Done |
-| Route error handling upgrade | `backend/app/routes/trends.py` — `explore_keyword_route` catches `ValueError` separately to forward user-facing message verbatim; fallback upgraded from `logger.error` to `logger.exception` | ✅ Done |
+| Google Trends rate-limit hardening | `backend/app/services/trends_service.py` — `_is_rate_limit_error()`, `_explore_keyword_sync` 3-attempt retry (2/4/8s jitter); `backend/app/routes/trends.py` — ValueError→502 forwarding, logger.exception upgrade | ✅ Done |
+| SerpAPI integration (Explore + Trending) | `backend/app/services/trends_service.py` — `_serpapi_explore_keyword_sync()`, `_serpapi_fetch_trending_sync()`, dispatch in `explore_keyword()` and `fetch_and_store_trends()`; `backend/app/config.py` — `serpapi_key`; `backend/.env` — `SERPAPI_KEY=` | ✅ Done |
 
 ### Current known issues / state
 

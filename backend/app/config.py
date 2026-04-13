@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # Logo generation
     stability_api_key: Optional[str] = None
 
+    # SerpAPI — primary source for Google Trends data (explore + trending now)
+    serpapi_key: Optional[str] = None
+
     # Google Trends — max number of sites auto-created via the trends feature
     trends_auto_site_limit: int = 3
 

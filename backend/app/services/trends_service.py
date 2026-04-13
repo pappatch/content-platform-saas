@@ -15,15 +15,24 @@ Responsibilities
 
 Fetch strategy
 --------------
-The Google Trends RSS feed (https://trends.google.com/trending/rss?geo={ISO})
-is used directly with the standard `requests` library.  pytrends is no longer
-used for fetching because all of its higher-level methods (trending_searches,
-realtime_trending_searches, top_charts) return HTTP 404 as of March 2026.
+SerpAPI (https://serpapi.com) is used as the primary data source when
+SERPAPI_KEY is configured (100 free searches/month, no credit card required):
 
-The RSS feed:
-- Returns HTTP 200 for all configured regions (US, GB, IL, FR, SA)
-- Provides `approx_traffic` values (e.g. "5K+", "200K+") per item
-- Requires no API key
+  Explore tab  — GET /search?engine=google_trends
+                 Returns interest_over_time, regional breakdown, related_queries
+                 as structured JSON without bot-detection issues.
+
+  Trending now — GET /search?engine=google_trends_trending_now&geo={ISO}
+                 Returns top trending searches with traffic estimates per country.
+                 Does not support geo="" (worldwide); falls back to RSS in that case.
+
+When SERPAPI_KEY is not set, the service falls back to:
+
+  Explore      — pytrends (TrendReq).  Subject to Google rate-limiting; exponential-
+                 backoff retry (3 attempts, 2/4/8 s) is applied automatically.
+
+  Trending now — Google Trends RSS feed (https://trends.google.com/trending/rss?geo={ISO})
+                 Requires no API key; returns HTTP 200 reliably as of April 2026.
 
 Security invariants
 -------------------
@@ -102,6 +111,13 @@ _RSS_HEADERS: dict[str, str] = {
     "Accept-Encoding": "gzip, deflate, br",
     "Cache-Control":   "no-cache",
 }
+
+# ---------------------------------------------------------------------------
+# SerpAPI constants
+# ---------------------------------------------------------------------------
+
+_SERPAPI_BASE_URL = "https://serpapi.com/search"
+_SERPAPI_TIMEOUT  = 30  # seconds — SerpAPI calls can be slow under load
 
 # ---------------------------------------------------------------------------
 # Regions catalogue — static grouped list for GET /trends/regions
@@ -253,10 +269,11 @@ def set_fetch_region(db, geo: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Explore pytrends helpers
+# Explore helpers — SerpAPI primary, pytrends fallback
 # ---------------------------------------------------------------------------
 
-# Maps the UI timeframe strings to pytrends timeframe strings
+# Maps the UI timeframe strings to SerpAPI / pytrends timeframe strings
+# (both APIs accept the same "today N-m" / "today 12-m" format).
 TIMEFRAME_MAP: dict[str, str] = {
     "30d": "today 1-m",
     "90d": "today 3-m",
@@ -292,6 +309,130 @@ _GEO_HL: dict[str, str] = {
     "UA": "uk-UA",
 }
 
+
+def _serpapi_explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dict:
+    """
+    Fetch Google Trends explore data via SerpAPI (engine=google_trends).
+
+    Makes a single HTTP call and returns interest_over_time, top_countries,
+    and related_queries parsed from the JSON response.
+
+    Args:
+        keyword:   Search keyword (already sanitised by the caller).
+        timeframe: One of "30d", "90d", "1y".
+        geo:       ISO country code or "" for worldwide.
+
+    Returns:
+        Dict with keys:
+          interest_over_time : list[{"date": str, "value": int}]
+          top_countries      : list[{"country": str, "value": int}]
+          related_queries    : list[{"query": str, "value": int}]
+
+    Raises:
+        ValueError: on 429 rate-limit or when the response cannot be parsed.
+
+    Runs synchronously — call via asyncio.to_thread() from async code.
+    """
+    tf = TIMEFRAME_MAP.get(timeframe, "today 1-m")
+    params: dict = {
+        "engine":  "google_trends",
+        "q":       keyword,
+        "date":    tf,
+        "api_key": settings.serpapi_key,
+    }
+    if geo:
+        params["geo"] = geo
+
+    try:
+        resp = _requests.get(_SERPAPI_BASE_URL, params=params, timeout=_SERPAPI_TIMEOUT)
+        resp.raise_for_status()
+    except _requests.exceptions.HTTPError as exc:
+        status_code = getattr(exc.response, "status_code", 0)
+        log_api_call(
+            "serpapi", "google_trends_explore", success=False,
+            meta={"keyword": keyword, "geo": geo or "world", "http_status": status_code},
+        )
+        if status_code == 429:
+            raise ValueError(
+                "Google Trends is temporarily unavailable — try again in a few minutes"
+            ) from exc
+        logger.exception("serpapi: explore HTTP %s for %r geo=%s", status_code, keyword, geo or "world")
+        raise
+    except _requests.exceptions.RequestException as exc:
+        logger.exception("serpapi: explore request failed for %r geo=%s", keyword, geo or "world")
+        log_api_call(
+            "serpapi", "google_trends_explore", success=False,
+            meta={"keyword": keyword, "geo": geo or "world", "error": type(exc).__name__},
+        )
+        raise
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        logger.exception("serpapi: explore JSON parse failed for %r", keyword)
+        log_api_call("serpapi", "google_trends_explore", success=False,
+                     meta={"keyword": keyword, "geo": geo or "world", "error": "json_parse"})
+        raise ValueError(
+            "Google Trends is temporarily unavailable — try again in a few minutes"
+        ) from exc
+
+    log_api_call(
+        "serpapi", "google_trends_explore", success=True,
+        meta={"keyword": keyword, "geo": geo or "world", "timeframe": timeframe},
+    )
+
+    # ── Interest over time ────────────────────────────────────────────────
+    iot_data: list[dict] = []
+    for item in data.get("interest_over_time", {}).get("timeline_data", []):
+        ts = item.get("timestamp")
+        values = item.get("values", [])
+        if not ts or not values:
+            continue
+        try:
+            date_str = datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
+            iot_data.append({"date": date_str, "value": int(values[0].get("extracted_value", 0))})
+        except (ValueError, TypeError, KeyError, IndexError):
+            pass
+
+    # ── Top countries ─────────────────────────────────────────────────────
+    countries_data: list[dict] = []
+    for item in data.get("compared_breakdown_by_region", {}).get("breakdown", []):
+        values = item.get("values", [])
+        if not values:
+            continue
+        try:
+            val = int(values[0].get("extracted_value", 0))
+            if val > 0:
+                countries_data.append({
+                    "country": item.get("location") or item.get("geo", ""),
+                    "value":   val,
+                })
+        except (ValueError, TypeError):
+            pass
+    countries_data.sort(key=lambda x: x["value"], reverse=True)
+    countries_data = countries_data[:20]
+
+    # ── Related queries ───────────────────────────────────────────────────
+    queries_data: list[dict] = []
+    for item in data.get("related_queries", {}).get("queries", []):
+        try:
+            val = int(item.get("extracted_value") or 0)
+            if val > 0:
+                queries_data.append({"query": str(item.get("query", "")), "value": val})
+        except (ValueError, TypeError):
+            pass
+    queries_data = queries_data[:10]
+
+    return {
+        "interest_over_time": iot_data,
+        "top_countries":      countries_data,
+        "related_queries":    queries_data,
+    }
+
+
+# ---------------------------------------------------------------------------
+# pytrends fallback helpers (used when SERPAPI_KEY is not configured)
+# ---------------------------------------------------------------------------
 
 def _is_rate_limit_error(exc: Exception) -> bool:
     """Return True if exc represents a Google Trends 429 rate-limit response."""
@@ -440,8 +581,10 @@ def _explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dict:
 
 async def explore_keyword(keyword: str, timeframe: str, geo: str) -> dict:
     """
-    Async wrapper around _explore_keyword_sync — runs in a thread pool so the
-    blocking pytrends HTTP calls do not block the FastAPI event loop.
+    Fetch Google Trends explore data for a keyword.
+
+    Uses SerpAPI when SERPAPI_KEY is configured (primary); falls back to
+    pytrends when it is not.
 
     Args:
         keyword:   Search keyword (caller must sanitise first).
@@ -451,6 +594,12 @@ async def explore_keyword(keyword: str, timeframe: str, geo: str) -> dict:
     Returns:
         Dict with interest_over_time, top_countries, related_queries lists.
     """
+    if settings.serpapi_key:
+        return await asyncio.to_thread(_serpapi_explore_keyword_sync, keyword, timeframe, geo)
+    logger.warning(
+        "explore_keyword: SERPAPI_KEY not configured — falling back to pytrends "
+        "(may be unreliable due to Google rate-limiting)"
+    )
     return await asyncio.to_thread(_explore_keyword_sync, keyword, timeframe, geo)
 
 
@@ -671,6 +820,73 @@ def _fetch_rss_sync(geo: str) -> list[tuple[str, float]]:
     return results
 
 
+def _serpapi_fetch_trending_sync(geo: str) -> list[tuple[str, float]]:
+    """
+    Fetch trending searches for one region via SerpAPI (engine=google_trends_trending_now).
+
+    Args:
+        geo: ISO-3166-1 alpha-2 country code (must be non-empty;
+             worldwide fetch is not supported by this SerpAPI engine).
+
+    Returns:
+        List of (keyword, score) tuples, up to trends_per_region entries.
+
+    Runs synchronously — call via asyncio.to_thread() from async code.
+    """
+    params: dict = {
+        "engine":  "google_trends_trending_now",
+        "geo":     geo,
+        "api_key": settings.serpapi_key,
+    }
+
+    try:
+        resp = _requests.get(_SERPAPI_BASE_URL, params=params, timeout=_SERPAPI_TIMEOUT)
+        resp.raise_for_status()
+    except _requests.exceptions.HTTPError as exc:
+        status_code = getattr(exc.response, "status_code", 0)
+        logger.warning("serpapi: trending_now HTTP %s for geo=%s", status_code, geo)
+        log_api_call(
+            "serpapi", "google_trends_trending", success=False,
+            meta={"geo": geo, "http_status": status_code},
+        )
+        return []
+    except _requests.exceptions.RequestException as exc:
+        logger.warning("serpapi: trending_now request failed for geo=%s — %s", geo, exc)
+        log_api_call(
+            "serpapi", "google_trends_trending", success=False,
+            meta={"geo": geo, "error": type(exc).__name__},
+        )
+        return []
+
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        logger.warning("serpapi: trending_now JSON parse failed for geo=%s — %s", geo, exc)
+        log_api_call("serpapi", "google_trends_trending", success=False,
+                     meta={"geo": geo, "error": "json_parse"})
+        return []
+
+    per_region = settings_service.get("trends_per_region", _DEFAULT_TRENDS_PER_REGION)
+    results: list[tuple[str, float]] = []
+    for rank, item in enumerate(data.get("trending_searches", [])):
+        if len(results) >= per_region:
+            break
+        query = item.get("query", "").strip()
+        if not query:
+            continue
+        # SerpAPI provides traffic estimate in "trending_searches_traffic" field
+        traffic = item.get("trending_searches_traffic", "")
+        score = _parse_traffic_score(traffic) if traffic else round(1.0 - rank * 0.09, 2)
+        results.append((query, score))
+
+    logger.info("serpapi: trending_now geo=%s returned %d item(s)", geo, len(results))
+    log_api_call(
+        "serpapi", "google_trends_trending", success=True,
+        meta={"geo": geo, "items": len(results)},
+    )
+    return results
+
+
 async def fetch_and_store_trends(regions: Optional[list[str]] = None) -> int:
     """
     Fetch trending topics for each region via the Google Trends RSS feed
@@ -704,8 +920,12 @@ async def fetch_and_store_trends(regions: Optional[list[str]] = None) -> int:
             # For "" (worldwide) default to "en"; for known codes use the map.
             language = _GEO_LANGUAGE_MAP.get(geo, REGION_CONFIG.get(geo, "en"))
 
-            # RSS fetch runs in a thread pool (blocking I/O)
-            items = await asyncio.to_thread(_fetch_rss_sync, geo)
+            # SerpAPI is primary when SERPAPI_KEY is set and a specific geo code
+            # is active; fall back to RSS for worldwide ("") or when no key is set.
+            if settings.serpapi_key and geo:
+                items = await asyncio.to_thread(_serpapi_fetch_trending_sync, geo)
+            else:
+                items = await asyncio.to_thread(_fetch_rss_sync, geo)
             if not items:
                 continue
 

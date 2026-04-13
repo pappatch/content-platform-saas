@@ -931,3 +931,37 @@ app.* loggers
 - No unused imports, no magic numbers, no `console.log` ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-04-13 (SerpAPI integration for Google Trends)
+
+### Changes reviewed
+- `backend/app/config.py` — `serpapi_key: Optional[str] = None`
+- `backend/.env` — `SERPAPI_KEY=` line added
+- `backend/app/services/trends_service.py` — `_serpapi_explore_keyword_sync()`, `_serpapi_fetch_trending_sync()`, dispatch logic in `explore_keyword()` and `fetch_and_store_trends()`
+
+### Security review
+- `SERPAPI_KEY` read exclusively from `settings.serpapi_key` — never hardcoded ✅
+- API key passed as `api_key` query param (SerpAPI requires this); not logged ✅
+- No new routes, no auth changes ✅
+- No new models, no migrations required ✅
+- All outbound HTTP via `_requests.get()` — same SSRF-safe path as existing RSS calls (no user-supplied URLs; `_SERPAPI_BASE_URL` is a hardcoded constant) ✅
+- Error paths: HTTP 429 raises `ValueError` with user-facing message; other HTTP errors log+re-raise; JSON parse error raises `ValueError`; `RequestException` logs+re-raises — no silent swallowing ✅
+- `log_api_call("serpapi", ...)` telemetry: logs service slug and status only — no key values in meta ✅
+
+### Code quality
+- `logger = logging.getLogger(__name__)` already at module level ✅
+- All error paths in SerpAPI functions use `logger.exception()` (unexpected) or `logger.warning()` (expected/retryable) ✅
+- `_serpapi_fetch_trending_sync` returns `[]` on failure (same contract as `_fetch_rss_sync`) ✅
+- `_serpapi_explore_keyword_sync` re-raises on unexpected errors (same contract as `_explore_keyword_sync`) ✅
+- `explore_keyword()` falls back to pytrends with `logger.warning()` when key absent ✅
+- `fetch_and_store_trends()` falls back to RSS for worldwide (`geo=""`) or when key absent ✅
+- No unused imports ✅
+- No hardcoded business logic values ✅
+- `usage_service.log_api_call()` instrumented at every SerpAPI call site ✅
+
+### Known limitation
+- `google_trends_trending_now` does not support `geo=""` (worldwide) — RSS fallback used automatically. If a worldwide trending feed is needed via SerpAPI in future, use `engine=google_trends` with no `q` parameter or switch to a different SerpAPI engine.
+
+### No new findings — all items clean.
