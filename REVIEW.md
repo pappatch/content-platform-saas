@@ -902,3 +902,32 @@ app.* loggers
 - No alert rule needed: bulk action failures are surfaced as HTTP 400/422/500 to the caller — not a background service ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-04-13 (Google Trends rate-limit hardening)
+
+### Changes reviewed
+- `backend/app/services/trends_service.py` — `_is_rate_limit_error()`, `_EXPLORE_RETRY_DELAYS`, refactored `_explore_keyword_sync`
+- `backend/app/routes/trends.py` — `explore_keyword_route` error handling
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code ✅
+- `_is_rate_limit_error` uses `isinstance` checks with pytrends/requests exception types — no string injection risk ✅
+- `str(exc)` fallback in `_is_rate_limit_error` only checks for "429" presence — safe read-only check, no user input involved ✅
+- `ValueError` message passed directly to `HTTPException.detail` — message is hardcoded in service, not derived from user input ✅
+
+### Code quality
+- `random` and `time` imported at module level ✅
+- `logger = logging.getLogger(__name__)` already declared at module level ✅
+- Retry-exhausted path uses `logger.exception()` inside `except` block (correct — traceback captured) ✅
+- Retry-in-progress path uses `logger.warning()` (correct — expected/recoverable condition) ✅
+- Route fallback upgraded from `logger.error` → `logger.exception` ✅
+- `retries=0, backoff_factor=0` on `TrendReq` avoids double-retry conflict with our own loop ✅
+- `except ValueError: raise` guard prevents our formatted message being swallowed by outer rate-limit handler ✅
+- Sub-call 429s re-raise to outer handler → triggers full session retry (correct: Google rate-limits the session, not just one call) ✅
+- No unused imports, no magic numbers, no `console.log` ✅
+
+### No new findings — all items clean.

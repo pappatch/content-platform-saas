@@ -504,6 +504,7 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 - Alert management slash commands: `/check-alerts`, `/run-log-analysis`, `/clear-alerts` in both `.claude/commands/` and `~/.claude/commands/`
 - Working Rules 2, 3, 4, 5 clarified; Feature Checklist added; section order improved (2026-03-18)
 - **Bulk actions in CMS** (2026-03-18): `PATCH /cms/articles/bulk` endpoint — atomic transaction, `BulkArticleRequest` schema (ids, action: publish|remove|reassign-category, category_id), `BulkActionResult` response (updated/failed/errors); `require_editor` auth; category-site mismatch counted as failed. `Articles.jsx` sticky `BulkToolbar` component with Publish/Remove/Assign Category (dropdown picker) / Clear; indeterminate checkbox in header; selected-row highlight; `Toast` component for success/error feedback; `bulkUpdateArticles()` added to `services/articles.js`
+- **Google Trends rate-limit hardening** (2026-04-13): `trends_service.py` — `_is_rate_limit_error()` helper (detects `TooManyRequestsError`, `requests.HTTPError` 429, and "429" string fallback); `_explore_keyword_sync` wraps all pytrends calls in 3-attempt exponential-backoff retry (2/4/8s delays); random 1–3s human-like jitter before each attempt; raises `ValueError("Google Trends is temporarily unavailable — try again in a few minutes")` after exhausted retries; `retries=0` on `TrendReq` to avoid double-retry. `routes/trends.py` — `explore_keyword_route` catches `ValueError` separately to forward the clear message verbatim; fallback handler upgraded from `logger.error` to `logger.exception`.
 
 ---
 
@@ -595,17 +596,14 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 ## Last Session Summary
 
-**Date:** 2026-03-22
+**Date:** 2026-04-13
 
 ### What was built this session
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Bulk actions in CMS — backend | `backend/app/schemas/article.py` — `BulkArticleRequest` (Pydantic v2: `@field_validator` for ids, `@model_validator` for category_required_for_reassign), `BulkActionResult`; `backend/app/routes/cms/articles.py` — `PATCH /bulk` (require_editor, atomic transaction, per-article error tolerance, category-site mismatch counted as failed, registered before `/{article_id}`) | ✅ Done |
-| Bulk actions in CMS — frontend | `frontend/src/apps/cms/Articles.jsx` — sticky `BulkToolbar` (indigo, `sticky top-0 z-20`), select-all with indeterminate state, per-row checkboxes, selected-row highlight, Publish / Remove (ConfirmDialog) / Assign Category (dropdown with outside-click dismiss) / Clear; `Toast` component (auto-dismiss 3500ms); `frontend/src/services/articles.js` — `bulkUpdateArticles()` | ✅ Done |
-| Architecture.jsx sync | Routes list: `/cms/articles/bulk` added; CMS Frontend layer: `BulkToolbar` + `Toast` added | ✅ Done |
-| CLAUDE.md deep audit + feature checklist | Working Rules 2–5 rewritten; `## Feature Checklist` section added (20 items); section order restructured; Next Steps extracted as own section | ✅ Done |
-| Architecture.jsx — alert system sync | `SLASH_COMMANDS` 8→11; `GLOBAL_CONFIG_FILES` + `PROJECT_CONFIG_FILES` updated; Rule 2 enforcement language; Step 9 in NEW_PROJECT_STEPS; Health & Alerting Standard section in Standards tab | ✅ Done |
+| Google Trends rate-limit hardening | `backend/app/services/trends_service.py` — `_is_rate_limit_error()` helper; `_explore_keyword_sync` with 3-attempt exponential-backoff retry (2/4/8s); random 1–3s jitter per attempt; clear `ValueError` on exhaustion; `retries=0` on `TrendReq` | ✅ Done |
+| Route error handling upgrade | `backend/app/routes/trends.py` — `explore_keyword_route` catches `ValueError` separately to forward user-facing message verbatim; fallback upgraded from `logger.error` to `logger.exception` | ✅ Done |
 
 ### Current known issues / state
 

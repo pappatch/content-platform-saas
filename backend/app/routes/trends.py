@@ -302,11 +302,17 @@ async def explore_keyword_route(
 
     try:
         data = await explore_keyword(clean_kw, timeframe, geo)
-    except Exception as exc:
-        logger.error("explore_keyword_route: failed for %r — %s", clean_kw, exc)
+    except ValueError as exc:
+        # Service raises ValueError with a user-friendly message after exhausting retries
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="pytrends exploration failed — Google may be rate-limiting. Try again shortly.",
+            detail=str(exc),
+        )
+    except Exception as exc:
+        logger.exception("explore_keyword_route: unexpected error for %r", clean_kw)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="pytrends exploration failed — please try again shortly.",
         )
 
     return ExploreResult(

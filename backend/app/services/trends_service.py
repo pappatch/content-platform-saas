@@ -38,7 +38,9 @@ Security invariants
 
 import asyncio
 import logging
+import random
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from typing import Optional
@@ -291,6 +293,29 @@ _GEO_HL: dict[str, str] = {
 }
 
 
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Return True if exc represents a Google Trends 429 rate-limit response."""
+    try:
+        from pytrends.exceptions import TooManyRequestsError
+        if isinstance(exc, TooManyRequestsError):
+            return True
+    except ImportError:
+        pass
+    try:
+        import requests
+        if isinstance(exc, requests.exceptions.HTTPError):
+            resp = getattr(exc, "response", None)
+            if resp is not None and getattr(resp, "status_code", None) == 429:
+                return True
+    except ImportError:
+        pass
+    return "429" in str(exc)
+
+
+# Exponential backoff delays (seconds) between retry attempts 1→2, 2→3, and after attempt 3.
+_EXPLORE_RETRY_DELAYS = [2, 4, 8]
+
+
 def _explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dict:
     """
     Run pytrends interest_over_time, interest_by_region, and related_queries
@@ -298,6 +323,9 @@ def _explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dict:
 
     Each sub-call is individually wrapped in try/except so a failure in one
     (e.g. interest_by_region returning empty) does not lose the others.
+    A 429 / TooManyRequestsError from any call triggers an exponential-backoff
+    retry (up to 3 attempts, 2 / 4 / 8 s delays).  A random 1–3 s jitter is
+    added before each attempt to appear more human-like to Google's bot detection.
 
     Args:
         keyword:   Search keyword (already sanitised by the caller).
@@ -310,6 +338,10 @@ def _explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dict:
           top_countries      : list[{"country": str, "value": int}]
           related_queries    : list[{"query": str, "value": int}]
 
+    Raises:
+        ValueError: "Google Trends is temporarily unavailable — try again in a few minutes"
+                    when all 3 attempts are exhausted due to rate limiting.
+
     Runs synchronously — call via asyncio.to_thread() from async code.
     """
     from pytrends.request import TrendReq
@@ -317,56 +349,93 @@ def _explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dict:
     hl = _GEO_HL.get(geo, "en-US")
     tf = TIMEFRAME_MAP.get(timeframe, "today 1-m")
 
-    pytrend = TrendReq(hl=hl, tz=0, timeout=(15, 30), retries=1, backoff_factor=0.5)
-    pytrend.build_payload([keyword], timeframe=tf, geo=geo)
+    for attempt in range(1, 4):
+        # Random human-like delay before each request to reduce bot-detection risk
+        time.sleep(random.uniform(1.0, 3.0))
 
-    # ── Interest over time ────────────────────────────────────────────────
-    iot_data: list[dict] = []
-    try:
-        df = pytrend.interest_over_time()
-        if df is not None and not df.empty and keyword in df.columns:
-            for date_idx, row in df.iterrows():
-                if not row.get("isPartial", False):
-                    iot_data.append({
-                        "date":  date_idx.strftime("%Y-%m-%d"),
-                        "value": int(row[keyword]),
-                    })
-    except Exception as exc:
-        logger.warning("explore: interest_over_time failed for %r — %s", keyword, exc)
+        try:
+            # retries=0: we manage retries ourselves so pytrends doesn't double-retry
+            pytrend = TrendReq(hl=hl, tz=0, timeout=(15, 30), retries=0, backoff_factor=0)
+            pytrend.build_payload([keyword], timeframe=tf, geo=geo)
 
-    # ── Interest by country ───────────────────────────────────────────────
-    countries_data: list[dict] = []
-    try:
-        ibr = pytrend.interest_by_region(resolution="COUNTRY", inc_low_vol=False)
-        if ibr is not None and not ibr.empty and keyword in ibr.columns:
-            top = ibr[[keyword]].sort_values(keyword, ascending=False).head(20)
-            for country_name, row in top.iterrows():
-                val = int(row[keyword])
-                if val > 0:
-                    countries_data.append({"country": str(country_name), "value": val})
-    except Exception as exc:
-        logger.warning("explore: interest_by_region failed for %r — %s", keyword, exc)
+            # ── Interest over time ────────────────────────────────────────────
+            iot_data: list[dict] = []
+            try:
+                df = pytrend.interest_over_time()
+                if df is not None and not df.empty and keyword in df.columns:
+                    for date_idx, row in df.iterrows():
+                        if not row.get("isPartial", False):
+                            iot_data.append({
+                                "date":  date_idx.strftime("%Y-%m-%d"),
+                                "value": int(row[keyword]),
+                            })
+            except Exception as exc:
+                if _is_rate_limit_error(exc):
+                    raise
+                logger.warning("explore: interest_over_time failed for %r — %s", keyword, exc)
 
-    # ── Related queries ───────────────────────────────────────────────────
-    queries_data: list[dict] = []
-    try:
-        rq = pytrend.related_queries()
-        kw_data = rq.get(keyword, {})
-        top_df = kw_data.get("top")
-        if top_df is not None and not top_df.empty:
-            for _, row in top_df.head(10).iterrows():
-                queries_data.append({
-                    "query": str(row["query"]),
-                    "value": int(row["value"]),
-                })
-    except Exception as exc:
-        logger.warning("explore: related_queries failed for %r — %s", keyword, exc)
+            # ── Interest by country ───────────────────────────────────────────
+            countries_data: list[dict] = []
+            try:
+                ibr = pytrend.interest_by_region(resolution="COUNTRY", inc_low_vol=False)
+                if ibr is not None and not ibr.empty and keyword in ibr.columns:
+                    top = ibr[[keyword]].sort_values(keyword, ascending=False).head(20)
+                    for country_name, row in top.iterrows():
+                        val = int(row[keyword])
+                        if val > 0:
+                            countries_data.append({"country": str(country_name), "value": val})
+            except Exception as exc:
+                if _is_rate_limit_error(exc):
+                    raise
+                logger.warning("explore: interest_by_region failed for %r — %s", keyword, exc)
 
-    return {
-        "interest_over_time": iot_data,
-        "top_countries":      countries_data,
-        "related_queries":    queries_data,
-    }
+            # ── Related queries ───────────────────────────────────────────────
+            queries_data: list[dict] = []
+            try:
+                rq = pytrend.related_queries()
+                kw_data = rq.get(keyword, {})
+                top_df = kw_data.get("top")
+                if top_df is not None and not top_df.empty:
+                    for _, row in top_df.head(10).iterrows():
+                        queries_data.append({
+                            "query": str(row["query"]),
+                            "value": int(row["value"]),
+                        })
+            except Exception as exc:
+                if _is_rate_limit_error(exc):
+                    raise
+                logger.warning("explore: related_queries failed for %r — %s", keyword, exc)
+
+            return {
+                "interest_over_time": iot_data,
+                "top_countries":      countries_data,
+                "related_queries":    queries_data,
+            }
+
+        except ValueError:
+            raise  # already our formatted message — pass through unchanged
+        except Exception as exc:
+            if not _is_rate_limit_error(exc):
+                raise
+            if attempt < 3:
+                delay = _EXPLORE_RETRY_DELAYS[attempt - 1]
+                logger.warning(
+                    "explore: Google Trends 429 (attempt %d/3) for %r — retrying in %ds",
+                    attempt, keyword, delay,
+                )
+                time.sleep(delay)
+            else:
+                logger.exception(
+                    "explore: Google Trends rate limit after 3 attempts for %r", keyword
+                )
+                raise ValueError(
+                    "Google Trends is temporarily unavailable — try again in a few minutes"
+                ) from exc
+
+    # Unreachable — the loop always returns or raises — satisfies the type checker.
+    raise ValueError(  # pragma: no cover
+        "Google Trends is temporarily unavailable — try again in a few minutes"
+    )
 
 
 async def explore_keyword(keyword: str, timeframe: str, geo: str) -> dict:
