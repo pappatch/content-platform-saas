@@ -384,24 +384,26 @@ def _serpapi_explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dic
     # ── Interest over time ────────────────────────────────────────────────
     iot_data: list[dict] = []
     for item in data.get("interest_over_time", {}).get("timeline_data", []):
-        ts = item.get("timestamp")
+        date_str = item.get("date", "")
         values = item.get("values", [])
-        if not ts or not values:
+        if not date_str or not values:
             continue
         try:
-            date_str = datetime.fromtimestamp(int(ts), tz=timezone.utc).strftime("%Y-%m-%d")
+            # SerpAPI returns dates as "Mar 15, 2026"; convert to ISO for charts.
+            # Keep the raw string if the format differs (e.g. weekly ranges like "Mar 15 - 21, 2026").
+            try:
+                date_str = datetime.strptime(date_str, "%b %d, %Y").strftime("%Y-%m-%d")
+            except ValueError:
+                pass
             iot_data.append({"date": date_str, "value": int(values[0].get("extracted_value", 0))})
         except (ValueError, TypeError, KeyError, IndexError):
             pass
 
     # ── Top countries ─────────────────────────────────────────────────────
     countries_data: list[dict] = []
-    for item in data.get("compared_breakdown_by_region", {}).get("breakdown", []):
-        values = item.get("values", [])
-        if not values:
-            continue
+    for item in data.get("interest_by_region", []):
         try:
-            val = int(values[0].get("extracted_value", 0))
+            val = int(item.get("extracted_value") or 0)
             if val > 0:
                 countries_data.append({
                     "country": item.get("location") or item.get("geo", ""),
@@ -414,7 +416,7 @@ def _serpapi_explore_keyword_sync(keyword: str, timeframe: str, geo: str) -> dic
 
     # ── Related queries ───────────────────────────────────────────────────
     queries_data: list[dict] = []
-    for item in data.get("related_queries", {}).get("queries", []):
+    for item in data.get("related_queries") or []:
         try:
             val = int(item.get("extracted_value") or 0)
             if val > 0:

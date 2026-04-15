@@ -965,3 +965,26 @@ app.* loggers
 - `google_trends_trending_now` does not support `geo=""` (worldwide) — RSS fallback used automatically. If a worldwide trending feed is needed via SerpAPI in future, use `engine=google_trends` with no `q` parameter or switch to a different SerpAPI engine.
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-04-15 (Fix SerpAPI response parser in _serpapi_explore_keyword_sync)
+
+### Changes reviewed
+- `backend/app/services/trends_service.py` — `_serpapi_explore_keyword_sync()` parser: timeline date field, top-countries key, related-queries key
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code ✅
+- All changes are read-only data extraction from a dict already parsed from API JSON — no injection risk ✅
+
+### Code quality
+- **Timeline**: replaced `item.get("timestamp")` + `datetime.fromtimestamp()` with `item.get("date", "")` (SerpAPI returns string dates, not UNIX timestamps); `datetime.strptime("%b %d, %Y")` converts "Mar 15, 2026" → "2026-03-15"; graceful fallback keeps raw string for weekly ranges ✅
+- **Top countries**: replaced non-existent `compared_breakdown_by_region.breakdown` key with `interest_by_region` (correct SerpAPI field); item-level extraction updated from nested `values[0].extracted_value` to flat `item.extracted_value` ✅
+- **Related queries**: replaced `data.get("related_queries", {}).get("queries", [])` with `data.get("related_queries") or []`; handles absent key without error ✅
+- `timezone` import retained (still used by `fetch_and_store_trends` on line 914) ✅
+- Module imports cleanly after change ✅
+- No unused imports introduced ✅
+
+### No new findings — all items clean.
