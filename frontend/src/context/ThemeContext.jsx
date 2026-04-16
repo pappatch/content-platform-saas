@@ -25,7 +25,7 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import api from '../api/client'
 
-const ThemeContext = createContext({ isDark: false, toggleTheme: () => {} })
+const ThemeContext = createContext({ isDark: false, toggleTheme: () => {}, setTheme: () => {} })
 
 const STORAGE_KEY = 'admin_theme'
 
@@ -78,8 +78,14 @@ export function ThemeProvider({ children }) {
     setIsDark(prev => !prev)
   }
 
+  // Direct setter — used by Settings page to apply a new theme value immediately
+  // without having to know the current state.
+  function setTheme(value) {
+    setIsDark(value === 'dark')
+  }
+
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme }}>
+    <ThemeContext.Provider value={{ isDark, toggleTheme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   )

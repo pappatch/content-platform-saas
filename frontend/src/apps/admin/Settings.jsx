@@ -17,11 +17,12 @@
  * Admin role only (enforced server-side; route is also behind ProtectedRoute).
  */
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '../../api/client'
 import Spinner from '../../components/Spinner'
 import { formatDate } from '../../utils/formatDate'
+import { useTheme } from '../../context/ThemeContext'
 
 // ---------------------------------------------------------------------------
 // API helpers
@@ -151,12 +152,28 @@ function formatKey(key) {
 
 function SettingRow({ setting }) {
   const qc = useQueryClient()
+  const { isDark, setTheme } = useTheme()
+  const isThemeSetting = setting.key === 'admin_theme_default'
+  // Snapshot the live theme at mount so we can revert preview on cancel
+  const originalIsDarkRef = useRef(isDark)
+  const themeSavedRef = useRef(false)
+
   const isTextarea  = TEXTAREA_KEYS.has(setting.key)
   // Textarea keys display one-per-line; stored as comma-separated
   const [localValue, setLocalValue] = useState(
     isTextarea ? commaToLines(setting.value) : setting.value
   )
   const [feedback, setFeedback] = useState(null)  // null | 'saved' | 'error:<msg>'
+
+  // Revert preview if the user navigates away without saving
+  useEffect(() => {
+    if (!isThemeSetting) return
+    return () => {
+      if (!themeSavedRef.current) {
+        setTheme(originalIsDarkRef.current ? 'dark' : 'light')
+      }
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const isBool      = setting.value_type === 'bool'
   const isFloat     = setting.value_type === 'float'
@@ -177,6 +194,11 @@ function SettingRow({ setting }) {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['platform-settings'] })
+      if (isThemeSetting) {
+        // Confirm the previewed theme and persist it to localStorage via ThemeContext
+        setTheme(localValue)
+        themeSavedRef.current = true
+      }
       setFeedback('saved')
       setTimeout(() => setFeedback(null), 2500)
     },
@@ -239,7 +261,12 @@ function SettingRow({ setting }) {
           /* Select box for enum-like string settings */
           <select
             value={localValue}
-            onChange={(e) => { setLocalValue(e.target.value); setFeedback(null) }}
+            onChange={(e) => {
+              setLocalValue(e.target.value)
+              setFeedback(null)
+              // Immediately preview the theme change before the user clicks Save
+              if (isThemeSetting) setTheme(e.target.value)
+            }}
             className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 bg-white"
           >
             {selectOpts.map((opt) => (

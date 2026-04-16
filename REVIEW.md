@@ -988,3 +988,29 @@ app.* loggers
 - No unused imports introduced ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-04-15 (Theme sync fix — Settings page → ThemeContext real-time)
+
+### Changes reviewed
+- `frontend/src/context/ThemeContext.jsx` — `setTheme(value)` function + context default updated
+- `frontend/src/apps/admin/Settings.jsx` — `useTheme` import; preview in onChange; confirm in onSuccess; revert on unmount
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code, no `dangerouslySetInnerHTML` ✅
+- No `console.log` introduced ✅
+- All async operations already have `.catch()` via React Query ✅
+
+### Code quality
+- `useEffect` with empty deps used intentionally for mount/unmount only; lint suppression comment added ✅
+- `originalIsDarkRef` captures ThemeContext `isDark` at mount (not DB value) — correctly reverts to user's previous personal theme, not the server default ✅
+- `themeSavedRef.current = true` in `onSuccess` prevents double-revert if user saves then navigates ✅
+- `setTheme` is idempotent — safe to call from both onChange (preview) and onSuccess (confirm) ✅
+- `useTheme()` is always called unconditionally (React rules); `isThemeSetting` gates the logic ✅
+- `isDark` variable destructured from `useTheme()` but not used directly in JSX — only used to initialise `originalIsDarkRef`; no unused-var issue since refs are not checked by most linters ✅
+- No unused imports ✅
+
+### No new findings — all items clean.
