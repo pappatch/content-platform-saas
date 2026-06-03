@@ -490,6 +490,7 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 - **Logo topic fix v1** (2026-06-03): `logo_service._build_topic()` prefers ASCII-rich keywords over Hebrew/RTL ones
 - **Logo topic fix v2** (2026-06-03): `_build_topic()` now scores and ranks ASCII keywords — `_score_keyword()` awards +3 pure-ASCII (`str.isascii()`), +2 length 3–20, +1 strong brand term (`_STRONG_BRAND_TERMS` frozenset); top 2 chosen; site 9 now yields `world cup, fifa` instead of `mondial, mondial 2026`
 - **Scrape worker inactive-site guard** (2026-06-03): `scrape_worker._run_due_jobs()` now checks `job.site.is_active` before calling `scrape_and_save`; inactive sites are skipped with an INFO log and never counted as failed
+- **Admin Dashboard v2** (2026-06-03): `Dashboard.jsx` fully rewritten — 7 sections: Platform Health Bar (API status badges), Content Pipeline (stat cards + stacked bar), AI Quality Overview (score histogram + avg per site + auto-publish donut), Scrape Activity (jobs table + inline Run Now), Recent Activity Feed (last 10 articles → CMS links), Trends Snapshot (top 3 active trends), System Alerts summary (last 3 unread + thermometer); full dark-mode support via `useTheme`
 - `pinned_until` timed pinning: nullable DateTime on Article; public API sorts pinned-until-active first; `PinModal` with 1d/1w/1m picker; expiry badge in CMS table
 - Reading time: `@property reading_time_minutes`; shown on all ArticleCard variants and ArticleDetail
 - TemplateB v2: sticky header; hero ≥60vh; `InfiniteFeed` for "More Stories"; `RelatedArticles` component; `Footer` component
@@ -609,21 +610,25 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Logo topic fix — prefer ASCII keywords for non-English sites | `backend/app/services/logo_service.py` — `_build_topic()` now filters for ASCII-containing keywords first; falls back to original `[:2]` slice only if no ASCII keywords exist | ✅ Done |
+| Logo topic fix v1 — prefer ASCII keywords over Hebrew/RTL | `backend/app/services/logo_service.py` — `_build_topic()` filters for ASCII-containing keywords first; falls back to raw `[:2]` when none exist | ✅ Done |
+| Logo topic fix v2 — score-rank ASCII keywords | `backend/app/services/logo_service.py` — `_score_keyword()` (+3 `str.isascii()`, +2 length 3–20, +1 `_STRONG_BRAND_TERMS`); site 9 now sends `world cup, fifa` to Stability AI | ✅ Done |
+| Logos regenerated for sites 8 & 9 | `POST /sites/8/regenerate-logo` + `POST /sites/9/regenerate-logo` — both returned AI PNG | ✅ Done |
+| Scrape worker inactive-site guard | `backend/app/workers/scrape_worker.py` — `_run_due_jobs()` checks `job.site.is_active` before `scrape_and_save()`; skips with INFO log, job status unchanged | ✅ Done |
+| Architecture.jsx scrape_worker description | `frontend/src/apps/admin/Architecture.jsx` — corrected stale tooltip (wrong fn name, wrong due-check predicate); added inactive-site skip note | ✅ Done |
+| Admin Dashboard v2 | `frontend/src/apps/admin/Dashboard.jsx` — full rewrite: 7 sections (Health Bar, Pipeline, AI Quality, Scrape Activity, Recent Feed, Trends Snapshot, Alerts); dark mode; inline Run Now for jobs | ✅ Done |
 
 ### Current known issues / state
 
-- **Stability AI regenerated AI PNGs** for sites 8 and 9 — balance was topped up; both now have `data:image/png` logos with correct topic prompts.
-- **Alert system workers not yet running** — alerts table needs `alembic upgrade head` (migration `e2f3a4b5c6d7`) first. After migration, worker starts automatically on backend restart.
-- **API Usage dashboard shows zeros** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to start populating it.
-- **Sites without `default_images`** will show coloured `--color-primary` placeholders. Run `/image-fix [site_id]` after populating default images via admin Site modal → "✦ Auto-fill empty".
-- **Hook enforcement is manual** — `.claude/hooks/` are instruction documents, not shell hooks. See REVIEW.md R19.
+- **Alert system migration pending** — `alembic upgrade head` for migration `e2f3a4b5c6d7` (alerts table) not yet confirmed run. Backend restart needed after migration for `alert_worker` to start.
+- **API Usage dashboard shows zeros** — `api_usage_log` is empty until new API calls are made; run a scrape job or trigger AI review.
+- **Sites without `default_images`** show `--color-primary` placeholder. Run `/image-fix [site_id]` then use admin Site modal → "✦ Auto-fill empty".
+- **Hook enforcement is manual** — `.claude/hooks/` are instruction docs, not shell hooks. See REVIEW.md R19.
+- **Dashboard.jsx not yet live-tested in browser** — the rewrite is code-complete but visual QA (dark mode, empty states, Run Now button) should be done in the next session.
 
 ### Exact next steps to continue from
 
-1. Run `alembic upgrade head` to apply migration `e2f3a4b5c6d7` (alerts table), restart backend
-2. Open admin → click thermometer → `POST /admin/alerts/test` → confirm full UI flow (bell badge, dropdown, Alerts page)
-3. Delete test alert via "Delete all" in bell dropdown
-4. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then manually add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at` (REVIEW.md R4)
-5. Run a scrape job → confirm API Costs dashboard shows live data
-6. At end of each session, invoke `/session-handoff` to keep this summary current
+1. Start frontend dev server (`cd frontend && npm run dev`) and open `http://localhost:5173/admin` — visually verify all 7 Dashboard sections render correctly in both light and dark mode; test "Run Now" button on a scrape job
+2. Run `alembic upgrade head` (from `backend/` with venv active) → restart backend → open admin → click thermometer → `POST /admin/alerts/test` → confirm bell badge, dropdown, and Alerts page all update; delete test alert
+3. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then manually add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at` (REVIEW.md R4)
+4. Run a scrape job → verify API Costs dashboard (`/admin/api-usage`) shows live spend data
+5. At end of each session, invoke `/session-handoff` to keep this summary current
