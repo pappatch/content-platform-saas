@@ -75,7 +75,7 @@ const STEP_DETAILS = {
   },
   'scrape-worker': {
     title: 'scrape_worker',
-    body:  'Runs every 60 seconds. Queries ScrapeJobs where next_run_at <= now, picks the highest-priority job, and calls run_scrape_job(). Reads max_searches_per_job from PlatformSettings (default 10).',
+    body:  'Interval from PlatformSettings (default 60 s). Queries all non-running ScrapeJobs, filters to those whose last_run + frequency_minutes has elapsed, then calls scrape_and_save(job_id) for each. Skips jobs whose parent site has is_active=false (logs "SKIP — site {id} is inactive"; job status unchanged).',
   },
   'articles-pending': {
     title: 'Articles — status: pending',
