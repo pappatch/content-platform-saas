@@ -487,6 +487,7 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 - Platform Settings system: 22 seeded `PlatformSetting` defaults; in-memory cache; `GET/PATCH /settings`; 6-group `Settings.jsx` UI; all hardcoded business logic constants replaced
 - Dark/Light mode: `ThemeContext.jsx`; persisted to localStorage; falls back to `admin_theme_default` platform setting; no flash on load; `setTheme(value)` exposed so Settings page can apply + preview without toggling
 - **Theme sync in Settings** (2026-04-15): `Settings.jsx` now calls `setTheme(value)` on select change (live preview), on save success (confirm + persist to localStorage), and reverts preview on unmount if save was not completed
+- **Logo topic fix** (2026-06-03): `logo_service._build_topic()` now prefers ASCII-rich keywords over Hebrew/RTL ones so non-English sites get semantically correct Stability AI prompts; SVG fallback accent detection unchanged
 - `pinned_until` timed pinning: nullable DateTime on Article; public API sorts pinned-until-active first; `PinModal` with 1d/1w/1m picker; expiry badge in CMS table
 - Reading time: `@property reading_time_minutes`; shown on all ArticleCard variants and ArticleDetail
 - TemplateB v2: sticky header; hero ≥60vh; `InfiniteFeed` for "More Stories"; `RelatedArticles` component; `Footer` component
@@ -600,16 +601,17 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 ## Last Session Summary
 
-**Date:** 2026-04-15
+**Date:** 2026-06-03
 
 ### What was built this session
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Theme sync fix — Settings → ThemeContext real-time | `frontend/src/context/ThemeContext.jsx` — added `setTheme(value)` direct setter + context default; `frontend/src/apps/admin/Settings.jsx` — import `useTheme`; preview on select change; confirm on save + localStorage update; revert-on-unmount if unsaved | ✅ Done |
+| Logo topic fix — prefer ASCII keywords for non-English sites | `backend/app/services/logo_service.py` — `_build_topic()` now filters for ASCII-containing keywords first; falls back to original `[:2]` slice only if no ASCII keywords exist | ✅ Done |
 
 ### Current known issues / state
 
+- **Stability AI balance is $0** — all logo regenerations fall back to SVG. Once balance is topped up, re-run `POST /sites/{id}/regenerate-logo` for any site that should have an AI-generated PNG logo.
 - **Alert system workers not yet running** — alerts table needs `alembic upgrade head` (migration `e2f3a4b5c6d7`) first. After migration, worker starts automatically on backend restart.
 - **API Usage dashboard shows zeros** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to start populating it.
 - **Sites without `default_images`** will show coloured `--color-primary` placeholders. Run `/image-fix [site_id]` after populating default images via admin Site modal → "✦ Auto-fill empty".

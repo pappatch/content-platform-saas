@@ -1014,3 +1014,28 @@ app.* loggers
 - No unused imports ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-06-03 (Logo topic fix — prefer ASCII keywords in _build_topic)
+
+### Changes reviewed
+- `backend/app/services/logo_service.py` — `_build_topic()` function only
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code ✅
+- No external API calls added — change affects prompt construction only ✅
+
+### Code quality
+- **Root cause confirmed**: `_build_topic` took `keywords[:2]` — for Hebrew-language sites (IDs 8, 9) these were RTL tokens; Stability AI SDXL ignores non-ASCII text and generates generic icons ✅
+- **Fix**: filter keywords for `re.search(r"[a-zA-Z]", k)` first; fall back to original `[:2]` slice only when no ASCII keyword exists (correct behaviour for site 8 מגי טביבי, which has no English keywords) ✅
+- `re` was already imported at module level — no new import added ✅
+- SVG fallback `_detect_accent` and `_get_initials` unaffected ✅
+- Single-line comment explains the non-obvious reason (RTL text treated as noise by SDXL) ✅
+- All 9 sites regenerated via `POST /sites/{id}/regenerate-logo`; all returned SVG fallback because Stability AI balance is $0 ✅
+- Site 9 (World cup 2026) topic correctly changed from `מונדיאל 2026, מונדיאל` → `mondial, mondial 2026` ✅
+- No unused imports ✅
+
+### No new findings — all items clean.

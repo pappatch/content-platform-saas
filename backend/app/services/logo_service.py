@@ -232,9 +232,12 @@ def _generate_svg_fallback(
 
 def _build_topic(site_name: str, keywords: list[str]) -> str:
     """Return a concise topic string for the Stability AI prompt."""
-    # Use up to 2 scrape keywords; fall back to site name
-    clean = [k.strip() for k in keywords[:2] if k.strip()]
-    return ", ".join(clean) if clean else site_name
+    # Prefer ASCII-rich keywords so non-English sites (Hebrew, Arabic) produce
+    # meaningful prompts — Stability SDXL is English-first and treats RTL text
+    # as noise, generating generic shapes instead of topic-relevant icons.
+    ascii_kws = [k.strip() for k in keywords if k.strip() and re.search(r"[a-zA-Z]", k)]
+    chosen = ascii_kws[:2] if ascii_kws else [k.strip() for k in keywords[:2] if k.strip()]
+    return ", ".join(chosen) if chosen else site_name
 
 
 # ---------------------------------------------------------------------------
