@@ -1039,3 +1039,28 @@ app.* loggers
 - No unused imports ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-06-03 (Logo topic scoring — _score_keyword + _STRONG_BRAND_TERMS)
+
+### Changes reviewed
+- `backend/app/services/logo_service.py` — `_build_topic()`, new `_score_keyword()`, new `_STRONG_BRAND_TERMS` constant
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code ✅
+- `_STRONG_BRAND_TERMS` is a module-level constant (frozenset) — immutable, no injection surface ✅
+
+### Code quality
+- **Bug caught and fixed during review**: original `re.fullmatch(r"[^\x80-\xff]+", kw)` would give +3 to Unicode chars > U+00FF (Hebrew, emoji) because they fall outside the 128-255 range; replaced with `kw.isascii()` which correctly tests all codepoints ≤ 127 ✅
+- `_STRONG_BRAND_TERMS` declared as `frozenset` (immutable, O(1) lookup) at module level — correct placement ✅
+- `_score_keyword` is a pure function with no side effects; docstring explains each criterion ✅
+- Stable sort used (`sorted()`) — ties broken by original list order, preserving scrape-job keyword ordering as secondary criterion ✅
+- Site 8 (מגי טביבי): no ASCII keywords → correctly falls back to original order ✅
+- Site 9 (Fifa World Cup 2026): `world cup` and `fifa` both score 6 (pure ASCII + length + strong brand); `mondial` scores 5 (pure ASCII + length, no brand term) — correct ✅
+- Both sites 8 and 9 successfully regenerated via `POST /sites/{id}/regenerate-logo`; both returned `data:image/png` (AI-generated) ✅
+- No unused imports ✅
+
+### No new findings — all items clean.

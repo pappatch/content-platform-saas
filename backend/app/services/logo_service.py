@@ -230,13 +230,41 @@ def _generate_svg_fallback(
 # Prompt helpers
 # ---------------------------------------------------------------------------
 
+_STRONG_BRAND_TERMS: frozenset[str] = frozenset([
+    "world cup", "fifa", "formula", "champions", "premier",
+    "nba", "nfl", "shih tzu", "bonsai",
+])
+
+def _score_keyword(kw: str) -> int:
+    """Score a keyword for Stability AI prompt quality (higher = better)."""
+    score = 0
+    # Pure ASCII (all codepoints 0-127) — understood best by SDXL
+    if kw.isascii():
+        score += 3
+    # Length sweet spot: descriptive but not a sentence fragment
+    if 3 <= len(kw) <= 20:
+        score += 2
+    # Globally-recognised brand/sports terms SDXL has strong visual associations for
+    if any(term in kw for term in _STRONG_BRAND_TERMS):
+        score += 1
+    return score
+
+
 def _build_topic(site_name: str, keywords: list[str]) -> str:
-    """Return a concise topic string for the Stability AI prompt."""
-    # Prefer ASCII-rich keywords so non-English sites (Hebrew, Arabic) produce
-    # meaningful prompts — Stability SDXL is English-first and treats RTL text
-    # as noise, generating generic shapes instead of topic-relevant icons.
+    """Return a concise topic string for the Stability AI prompt.
+
+    Scores each keyword and picks the best two so that strong, ASCII brand
+    terms (e.g. 'world cup', 'fifa') are preferred over transliterated or
+    mixed-script tokens ('mondial', Hebrew keywords) that SDXL treats as noise.
+    Falls back to the original first-two slice when no ASCII keyword exists.
+    """
     ascii_kws = [k.strip() for k in keywords if k.strip() and re.search(r"[a-zA-Z]", k)]
-    chosen = ascii_kws[:2] if ascii_kws else [k.strip() for k in keywords[:2] if k.strip()]
+    if not ascii_kws:
+        # No ASCII at all (e.g. purely Hebrew site) — use raw order as before
+        chosen = [k.strip() for k in keywords[:2] if k.strip()]
+    else:
+        ranked = sorted(ascii_kws, key=_score_keyword, reverse=True)
+        chosen = ranked[:2]
     return ", ".join(chosen) if chosen else site_name
 
 
