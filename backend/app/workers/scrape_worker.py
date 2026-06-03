@@ -55,6 +55,13 @@ async def _run_due_jobs() -> None:
             return
         logger.info("Worker: %d job(s) due for execution", len(due))
         for job in due:
+            if not job.site or not job.site.is_active:
+                logger.info(
+                    "Worker: SKIP — site %d is inactive (job id=%d)",
+                    job.site_id,
+                    job.id,
+                )
+                continue
             logger.info("Worker: starting job id=%d keywords=%s", job.id, job.keywords)
             await scrape_and_save(job.id)
     except Exception:

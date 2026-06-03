@@ -1064,3 +1064,26 @@ app.* loggers
 - No unused imports ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-06-03 (Scrape worker: skip jobs for inactive sites)
+
+### Changes reviewed
+- `backend/app/workers/scrape_worker.py` — `_run_due_jobs()` only
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code ✅
+- Guard reads `job.site.is_active` — ORM relationship, no raw SQL ✅
+
+### Code quality
+- **Root cause**: `_due_jobs()` queried all non-running ScrapeJobs without joining Site; `site.is_active` was never consulted — inactive sites kept scraping ✅
+- **Fix**: site-active check added in `_run_due_jobs()` loop before `scrape_and_save()`; uses `job.site` lazy-load (session still open at that point) ✅
+- `not job.site` guard handles the degenerate case of a dangling FK (orphaned job with no parent site row) — logs and skips rather than crashing ✅
+- Skipped jobs: INFO log `"Worker: SKIP — site {id} is inactive (job id={id})"`, `continue` — job status unchanged (not marked failed) ✅
+- No new imports required ✅
+- Smoke-test confirmed: all 7 current non-running jobs have `is_active=True`; zero skips in production right now; guard fires when any site is set inactive ✅
+
+### No new findings — all items clean.

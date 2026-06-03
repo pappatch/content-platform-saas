@@ -489,6 +489,7 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 - **Theme sync in Settings** (2026-04-15): `Settings.jsx` now calls `setTheme(value)` on select change (live preview), on save success (confirm + persist to localStorage), and reverts preview on unmount if save was not completed
 - **Logo topic fix v1** (2026-06-03): `logo_service._build_topic()` prefers ASCII-rich keywords over Hebrew/RTL ones
 - **Logo topic fix v2** (2026-06-03): `_build_topic()` now scores and ranks ASCII keywords — `_score_keyword()` awards +3 pure-ASCII (`str.isascii()`), +2 length 3–20, +1 strong brand term (`_STRONG_BRAND_TERMS` frozenset); top 2 chosen; site 9 now yields `world cup, fifa` instead of `mondial, mondial 2026`
+- **Scrape worker inactive-site guard** (2026-06-03): `scrape_worker._run_due_jobs()` now checks `job.site.is_active` before calling `scrape_and_save`; inactive sites are skipped with an INFO log and never counted as failed
 - `pinned_until` timed pinning: nullable DateTime on Article; public API sorts pinned-until-active first; `PinModal` with 1d/1w/1m picker; expiry badge in CMS table
 - Reading time: `@property reading_time_minutes`; shown on all ArticleCard variants and ArticleDetail
 - TemplateB v2: sticky header; hero ≥60vh; `InfiniteFeed` for "More Stories"; `RelatedArticles` component; `Footer` component
