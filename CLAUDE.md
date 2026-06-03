@@ -604,7 +604,7 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 ## Last Session Summary
 
-**Date:** 2026-06-03
+**Date:** 2026-06-03 — **PROJECT PAUSED** — new project WorldCup2026 starting
 
 ### What was built this session
 
@@ -617,18 +617,18 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 | Architecture.jsx scrape_worker description | `frontend/src/apps/admin/Architecture.jsx` — corrected stale tooltip (wrong fn name, wrong due-check predicate); added inactive-site skip note | ✅ Done |
 | Admin Dashboard v2 | `frontend/src/apps/admin/Dashboard.jsx` — full rewrite: 7 sections (Health Bar, Pipeline, AI Quality, Scrape Activity, Recent Feed, Trends Snapshot, Alerts); dark mode; inline Run Now for jobs | ✅ Done |
 
-### Current known issues / state
+### Current known issues / state (when resuming)
 
-- **Alert system migration pending** — `alembic upgrade head` for migration `e2f3a4b5c6d7` (alerts table) not yet confirmed run. Backend restart needed after migration for `alert_worker` to start.
-- **API Usage dashboard shows zeros** — `api_usage_log` is empty until new API calls are made; run a scrape job or trigger AI review.
-- **Sites without `default_images`** show `--color-primary` placeholder. Run `/image-fix [site_id]` then use admin Site modal → "✦ Auto-fill empty".
+- **Dashboard.jsx not yet live-tested in browser** — code-complete but visual QA needed (dark mode, empty states, Run Now button).
+- **Alert system migration pending** — `alembic upgrade head` for migration `e2f3a4b5c6d7` (alerts table) not yet confirmed run; backend restart needed for `alert_worker` to start.
+- **API Usage dashboard shows zeros** — `api_usage_log` empty until new API calls are made; run a scrape job or trigger AI review.
+- **DB indexes not added** — see REVIEW.md R4: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`.
 - **Hook enforcement is manual** — `.claude/hooks/` are instruction docs, not shell hooks. See REVIEW.md R19.
-- **Dashboard.jsx not yet live-tested in browser** — the rewrite is code-complete but visual QA (dark mode, empty states, Run Now button) should be done in the next session.
 
-### Exact next steps to continue from
+### Exact next steps when resuming this project
 
-1. Start frontend dev server (`cd frontend && npm run dev`) and open `http://localhost:5173/admin` — visually verify all 7 Dashboard sections render correctly in both light and dark mode; test "Run Now" button on a scrape job
-2. Run `alembic upgrade head` (from `backend/` with venv active) → restart backend → open admin → click thermometer → `POST /admin/alerts/test` → confirm bell badge, dropdown, and Alerts page all update; delete test alert
-3. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then manually add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at` (REVIEW.md R4)
-4. Run a scrape job → verify API Costs dashboard (`/admin/api-usage`) shows live spend data
+1. `cd frontend && npm run dev` → open `http://localhost:5173/admin` → verify all 7 Dashboard sections in light + dark mode; test "Run Now" on a scrape job
+2. `cd backend && source .venv/bin/activate && alembic upgrade head` → restart backend → `POST /admin/alerts/test` → confirm full alert UI flow → delete test alert
+3. `alembic revision --autogenerate -m "add db indexes"` → manually add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at` → commit migration
+4. Run a scrape job → verify `/admin/api-usage` shows live spend data
 5. At end of each session, invoke `/session-handoff` to keep this summary current
