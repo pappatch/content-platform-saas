@@ -157,6 +157,17 @@ ALERT_RULES: list[dict] = [
     # (e.g. DB itself being down; kept as last resort)
     # ------------------------------------------------------------------
     {
+        "id":               "review_worker_stalled",
+        "check":            "log",
+        "pattern":          r"Review worker stalled:",
+        "level":            "critical",
+        "title":            "Review worker stalled",
+        "message_template": "The review worker has not processed any article in 10+ minutes despite pending articles existing. AI review is stalled — check the Anthropic API key, account status, and backend logs.",
+        "source":           "ai_review",
+        "cooldown_minutes": 10,
+        "min_matches":      1,
+    },
+    {
         "id":               "db_connection_error",
         "check":            "log",
         "pattern":          r"OperationalError|database is locked|sqlite3\.OperationalError|DB connection",

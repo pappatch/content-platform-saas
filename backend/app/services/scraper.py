@@ -731,6 +731,16 @@ async def scrape_and_save(job_id: int) -> None:
             logger.error("scrape_and_save: job %d not found", job_id)
             return
 
+        # Guard: do not scrape for inactive sites — avoids accumulating pending
+        # articles that will never be published or reviewed for dead sites.
+        if not job.site or not job.site.is_active:
+            logger.info(
+                "scrape_and_save: SKIP — site %d inactive (job id=%d)",
+                job.site_id,
+                job.id,
+            )
+            return
+
         keywords: list[str] = job.keywords or []
         language: str = job.language or "en"
 

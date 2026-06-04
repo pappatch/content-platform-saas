@@ -10,10 +10,13 @@ Design
   article in pending state (safe to retry on the next poll).
 - The loop itself never raises; all errors are logged and suppressed so
   a single bad article cannot bring down the worker.
+- Stall detection: if pending articles exist but none have been processed
+  in the last 10 minutes, emits a CRITICAL log so the alert system fires.
 """
 
 import asyncio
 import logging
+import time
 
 from app.database import SessionLocal
 from app.models.article import Article, ArticleStatus
@@ -23,6 +26,11 @@ from app.services import settings_service
 logger = logging.getLogger(__name__)
 
 _DEFAULT_INTERVAL_SECONDS: int = 30
+_STALL_THRESHOLD_SECONDS: int = 600  # 10 minutes
+
+# Monotonic timestamps — set by review_worker_loop; 0.0 = not yet initialised
+_worker_start_ts: float = 0.0
+_last_processed_ts: float = 0.0
 
 
 def _pending_article_ids(db) -> list[int]:
@@ -35,15 +43,29 @@ def _pending_article_ids(db) -> list[int]:
 
 
 async def _process_pending() -> None:
+    global _last_processed_ts
     db = SessionLocal()
     try:
         ids = _pending_article_ids(db)
         if not ids:
             return
+
+        # Stall detection: pending articles exist but nothing processed recently
+        now = time.monotonic()
+        reference = _last_processed_ts or _worker_start_ts
+        if reference > 0 and (now - reference) >= _STALL_THRESHOLD_SECONDS:
+            logger.critical(
+                "Review worker stalled: %d pending article(s) but no article processed "
+                "in the last %d seconds — worker may be stuck or Anthropic API is unavailable",
+                len(ids),
+                int(now - reference),
+            )
+
         logger.info("Review worker: %d pending article(s) to process", len(ids))
         for article_id in ids:
             try:
                 await ai_review_and_enrich(article_id)
+                _last_processed_ts = time.monotonic()
             except Exception:
                 logger.exception(
                     "Review worker: unhandled error for article %d", article_id
@@ -59,6 +81,8 @@ async def review_worker_loop() -> None:
     Infinite async loop. Started as an asyncio.Task at app startup and
     cancelled cleanly on shutdown.
     """
+    global _worker_start_ts
+    _worker_start_ts = time.monotonic()
     logger.info("Review worker started (interval from platform_settings)")
     while True:
         interval = settings_service.get("review_worker_interval_seconds", _DEFAULT_INTERVAL_SECONDS)
