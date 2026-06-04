@@ -620,6 +620,9 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 | Architecture.jsx scrape_worker description | `frontend/src/apps/admin/Architecture.jsx` — corrected stale tooltip; added inactive-site skip note | ✅ Done |
 | Admin Dashboard v2 | `frontend/src/apps/admin/Dashboard.jsx` — full rewrite: 7 sections (Health Bar, Pipeline, AI Quality, Scrape Activity, Recent Feed, Trends Snapshot, Alerts) | ✅ Done |
 | Default images ASCII filter | `backend/app/routes/sites/sites.py` — `get_site_default_images` and `fill_site_default_images` now filter keywords to ASCII-only before Unsplash queries; all 9 sites regenerated | ✅ Done |
+| Platform GitHub remote fix | Created `pappatch/content-platform-saas` repo; updated `origin` to new remote; pushed `main` + `platform` branches | ✅ Done |
+| Default images deduplication + variety | `backend/app/routes/sites/sites.py` — added `_VARIETY_SUFFIXES` + `_build_image_queries()` helper; GET/FILL endpoints use distinct queries per slot + `excluded_urls` to prevent duplicates; DELETE endpoint now applies ASCII filter + `excluded_urls` on auto-fill; all 9 sites regenerated (5 unique images each) | ✅ Done |
+| site-renderer proxy port fix | `site-renderer/vite.config.js` — `/public` proxy corrected from `8000` → `8001` (platform port) | ✅ Done |
 
 ### Current known issues / state (when resuming)
 

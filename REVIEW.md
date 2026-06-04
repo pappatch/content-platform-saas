@@ -1111,3 +1111,29 @@ app.* loggers
 - No unused imports, no hardcoded values ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-06-04 (session 2) — default images deduplication + variety
+
+### Changes reviewed
+- `backend/app/routes/sites/sites.py` — `_build_image_queries()` helper + GET / POST fill / DELETE default-image endpoints
+- `site-renderer/vite.config.js` — proxy port corrected from 8000 → 8001
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code ✅
+- `_build_image_queries` purely in-process string manipulation — no SSRF risk ✅
+- `excluded_urls` passed through to `enrich_article_images` which already normalises to photo-ID keys ✅
+
+### Code quality
+- **Root cause (duplicates)**: GET and FILL used `keywords[i % len(keywords)]` so single-keyword sites always queried the same term, returning the same top photo for all 5 slots ✅ Fixed via `_build_image_queries` which uses distinct keywords per slot + variety suffixes for overflow
+- **Root cause (DELETE)**: no ASCII filter in auto-fill branch; no `excluded_urls` passed — replacement could duplicate an existing slot ✅ Fixed: ASCII filter + `excluded_urls=set(images)` after `images.pop(index)`
+- `seen_urls` set updated after each successful image in GET/FILL — prevents duplicates even across fallback paths ✅
+- `_VARIETY_SUFFIXES` constant (5 items) ensures deterministic keyword variety when fewer than 5 ASCII keywords exist ✅
+- `base_kw = query.replace(" professional photography", "")` — clean extraction for fallback path ✅
+- All 9 sites regenerated; every site returned 5 images with `unique == 5` ✅
+- No unused imports, no hardcoded values ✅
+
+### No new findings — all items clean.

@@ -398,6 +398,31 @@ async def ai_enrich_site(
 
 
 # ---------------------------------------------------------------------------
+# Default-image helpers — keyword expansion and deduplication
+# ---------------------------------------------------------------------------
+
+_VARIETY_SUFFIXES = ("stadium", "championship", "players", "trophy", "fans")
+
+
+def _build_image_queries(keywords: list[str], n: int) -> list[str]:
+    """
+    Return exactly *n* search queries, one per image slot.
+
+    Uses keywords[0..len-1] for the first slots, then appends variety suffixes
+    to keywords[0] so every slot gets a distinct search term even when fewer
+    than *n* ASCII keywords exist.
+    """
+    queries: list[str] = []
+    for i in range(n):
+        if i < len(keywords):
+            queries.append(f"{keywords[i]} professional photography")
+        else:
+            suffix = _VARIETY_SUFFIXES[(i - len(keywords)) % len(_VARIETY_SUFFIXES)]
+            queries.append(f"{keywords[0]} {suffix} professional photography")
+    return queries
+
+
+# ---------------------------------------------------------------------------
 # Default images — curated Unsplash images for a site's keyword set
 # ---------------------------------------------------------------------------
 
@@ -452,20 +477,22 @@ async def get_site_default_images(
     from app.services.image_service import enrich_article_images
     from app.services.image_validator import is_valid_image_url
     n_images = int(settings_service.get("default_images_per_site", 5))
+    queries = _build_image_queries(keywords, n_images)
     images: list[str] = []
-    for i in range(n_images):
-        kw = keywords[i % len(keywords)]
-        enriched_kw = f"{kw} professional photography"
-        url = await enrich_article_images(-(site_id * 10 + i), enriched_kw)
+    seen_urls: set[str] = set()
+    for i, query in enumerate(queries):
+        base_kw = query.replace(" professional photography", "")
+        url = await enrich_article_images(-(site_id * 10 + i), query, excluded_urls=seen_urls)
         if url and await is_valid_image_url(url):
             images.append(url)
+            seen_urls.add(url)
         else:
-            # Fallback: try without the suffix, then plain redirect
-            url2 = await enrich_article_images(-(site_id * 10 + i + 50), kw)
+            url2 = await enrich_article_images(-(site_id * 10 + i + 50), base_kw, excluded_urls=seen_urls)
             if url2 and await is_valid_image_url(url2):
                 images.append(url2)
+                seen_urls.add(url2)
             else:
-                images.append(f"https://source.unsplash.com/featured/?{urllib.parse.quote(kw)}")
+                images.append(f"https://source.unsplash.com/featured/?{urllib.parse.quote(base_kw)}")
 
     # Persist to site.config.default_images
     config["default_images"] = images
@@ -555,18 +582,21 @@ async def fill_site_default_images(
     from app.services.image_service import enrich_article_images
     from app.services.image_validator import is_valid_image_url
 
+    queries = _build_image_queries(keywords, n_slots)
+    seen_urls: set[str] = {u for u in current if u is not None}
     filled = 0
     for i, slot in enumerate(current):
         if slot is not None:
             continue
-        kw = keywords[i % len(keywords)]
-        url = await enrich_article_images(-(site_id * 10 + i), f"{kw} professional photography")
+        query = queries[i]
+        base_kw = query.replace(" professional photography", "")
+        url = await enrich_article_images(-(site_id * 10 + i), query, excluded_urls=seen_urls)
         if url and await is_valid_image_url(url):
-            current[i] = url; filled += 1
+            current[i] = url; seen_urls.add(url); filled += 1
         else:
-            url2 = await enrich_article_images(-(site_id * 10 + i + 50), kw)
+            url2 = await enrich_article_images(-(site_id * 10 + i + 50), base_kw, excluded_urls=seen_urls)
             if url2 and await is_valid_image_url(url2):
-                current[i] = url2; filled += 1
+                current[i] = url2; seen_urls.add(url2); filled += 1
 
     images = [u for u in current if u is not None]
     config["default_images"] = images
@@ -620,15 +650,23 @@ async def delete_site_default_image(
         if not keywords:
             keywords = ["news", "world", "people", "nature", "city"]
 
+        # Filter to ASCII-only keywords — non-ASCII text is ignored by Unsplash.
+        _ascii_kws_del = [k for k in keywords if re.search(r"[a-zA-Z]", k)]
+        if _ascii_kws_del:
+            keywords = _ascii_kws_del
+
         from app.services.image_service import enrich_article_images
         from app.services.image_validator import is_valid_image_url
 
-        kw = keywords[index % len(keywords)]
-        url = await enrich_article_images(-(site_id * 10 + index), f"{kw} professional photography")
+        queries = _build_image_queries(keywords, index + 1)
+        kw_query = queries[index]
+        base_kw = kw_query.replace(" professional photography", "")
+        excluded = set(images)
+        url = await enrich_article_images(-(site_id * 10 + index), kw_query, excluded_urls=excluded)
         if url and await is_valid_image_url(url):
             images.append(url)
         else:
-            url2 = await enrich_article_images(-(site_id * 10 + index + 50), kw)
+            url2 = await enrich_article_images(-(site_id * 10 + index + 50), base_kw, excluded_urls=excluded)
             if url2 and await is_valid_image_url(url2):
                 images.append(url2)
 
