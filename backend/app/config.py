@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     # AI Review
     ai_review_threshold: float = 0.5
     anthropic_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
 
     # Search providers — set in .env, never hardcode
     tavily_api_key: Optional[str] = None

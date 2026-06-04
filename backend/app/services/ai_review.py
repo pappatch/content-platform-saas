@@ -46,7 +46,15 @@ settings = get_settings()
 # Constants
 # ---------------------------------------------------------------------------
 
-MODEL = "claude-haiku-4-5-20251001"
+# Model used when calling Anthropic directly (fallback)
+_ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+
+# Model string used via OpenRouter (primary)
+_OPENROUTER_MODEL = "anthropic/claude-sonnet-4-5"
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api"  # SDK appends /v1/messages
+
+# Resolved at call time — whichever provider is active
+MODEL = _OPENROUTER_MODEL  # kept for log_api_call meta; updated per call
 
 # Fallback constants — live values read from settings_service at call time.
 _DEFAULT_INPUT_CHAR_LIMIT = 8000
@@ -197,9 +205,10 @@ async def ai_review_and_enrich(article_id: int) -> None:
 
     On any error: logs and leaves status = pending (safe to retry).
     """
-    if not settings.anthropic_api_key:
+    if not settings.openrouter_api_key and not settings.anthropic_api_key:
         logger.warning(
-            "ai_review_and_enrich: ANTHROPIC_API_KEY not set — skipping article %d",
+            "ai_review_and_enrich: no API key configured (OPENROUTER_API_KEY or "
+            "ANTHROPIC_API_KEY required) — skipping article %d",
             article_id,
         )
         return
@@ -372,37 +381,57 @@ async def ai_review_and_enrich(article_id: int) -> None:
 # ---------------------------------------------------------------------------
 
 async def _call_rewrite_api(prompt: str) -> dict:
-    """Call the rewrite_article tool and return its input dict."""
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    """
+    Call the rewrite_article tool and return its input dict.
+
+    Uses OpenRouter (primary) when OPENROUTER_API_KEY is set; falls back to
+    direct Anthropic when only ANTHROPIC_API_KEY is available.
+    """
+    if settings.openrouter_api_key:
+        client = anthropic.AsyncAnthropic(
+            api_key=settings.openrouter_api_key,
+            base_url=_OPENROUTER_BASE_URL,
+        )
+        active_model = _OPENROUTER_MODEL
+        provider_label = "openrouter"
+    else:
+        client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        active_model = _ANTHROPIC_MODEL
+        provider_label = "anthropic"
 
     try:
         response = await client.messages.create(
-            model=MODEL,
+            model=active_model,
             max_tokens=settings_service.get("ai_review_max_tokens", _DEFAULT_MAX_TOKENS),
             tools=[_REWRITE_TOOL],
             tool_choice={"type": "tool", "name": "rewrite_article"},
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.AuthenticationError:
-        logger.error("Anthropic API: authentication failed — check ANTHROPIC_API_KEY")
+        logger.error("%s API: authentication failed — check API key", provider_label)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model})
         raise
     except anthropic.RateLimitError:
-        logger.warning("Anthropic API: rate limit hit")
+        logger.warning("%s API: rate limit hit", provider_label)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model, "reason": "rate_limit"})
         raise
     except anthropic.APIStatusError as exc:
-        logger.error("Anthropic API error %d: %s", exc.status_code, exc.message)
+        logger.error("%s API error %d: %s", provider_label, exc.status_code, exc.message)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model, "status_code": exc.status_code})
         raise
     except anthropic.APIConnectionError:
-        logger.error("Anthropic API: connection error")
+        logger.error("%s API: connection error", provider_label)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model, "reason": "connection_error"})
         raise
     except anthropic.APIError as exc:
-        logger.error("Anthropic API: %s", exc)
+        logger.error("%s API: %s", provider_label, exc)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model})
         raise
 
     log_api_call(
-        "anthropic", "messages_create", success=True,
+        provider_label, "messages_create", success=True,
         meta={
-            "model":         MODEL,
+            "model":         active_model,
             "input_tokens":  response.usage.input_tokens,
             "output_tokens": response.usage.output_tokens,
         },
@@ -412,4 +441,4 @@ async def _call_rewrite_api(prompt: str) -> dict:
         if block.type == "tool_use" and block.name == "rewrite_article":
             return block.input
 
-    raise ValueError("Anthropic response contained no rewrite_article tool call")
+    raise ValueError(f"{provider_label} response contained no rewrite_article tool call")
