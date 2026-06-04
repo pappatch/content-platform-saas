@@ -13,6 +13,9 @@ Multi-site SaaS content platform. Each "site" is an independent publication with
 
 **Started:** March 10, 2026 · **Developer:** Elad Cohen · **Target:** AWS
 
+**Repository:** https://github.com/pappatch/content-platform-saas (platform project)
+**Note:** WorldCup2026 lives at https://github.com/pappatch/content-platform — separate repo, do not confuse.
+
 ---
 
 ## Slash Commands
