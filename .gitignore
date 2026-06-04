@@ -20,6 +20,7 @@ venv/
 node_modules/
 dist/
 .next/
+.vite/
 
 # macOS
 .DS_Store

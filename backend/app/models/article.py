@@ -31,7 +31,7 @@ class Article(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     source_url = Column(String, unique=True, index=True)
-    status = Column(Enum(ArticleStatus), default=ArticleStatus.pending)
+    status = Column(Enum(ArticleStatus), default=ArticleStatus.pending, index=True)
 
     # Primary image (first image found in article)
     main_image_url = Column(String, nullable=True)
@@ -58,7 +58,7 @@ class Article(Base):
     # and shows a live countdown badge on TemplateB.
     pinned_until = Column(DateTime, nullable=True)
 
-    site_id = Column(Integer, ForeignKey("sites.id"), nullable=False)
+    site_id = Column(Integer, ForeignKey("sites.id"), nullable=False, index=True)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     editor_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

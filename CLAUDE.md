@@ -494,6 +494,10 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 - **Logo topic fix v2** (2026-06-03): `_build_topic()` now scores and ranks ASCII keywords — `_score_keyword()` awards +3 pure-ASCII (`str.isascii()`), +2 length 3–20, +1 strong brand term (`_STRONG_BRAND_TERMS` frozenset); top 2 chosen; site 9 now yields `world cup, fifa` instead of `mondial, mondial 2026`
 - **Scrape worker inactive-site guard** (2026-06-03): `scrape_worker._run_due_jobs()` now checks `job.site.is_active` before calling `scrape_and_save`; inactive sites are skipped with an INFO log and never counted as failed
 - **Admin Dashboard v2** (2026-06-03): `Dashboard.jsx` fully rewritten — 7 sections: Platform Health Bar (API status badges), Content Pipeline (stat cards + stacked bar), AI Quality Overview (score histogram + avg per site + auto-publish donut), Scrape Activity (jobs table + inline Run Now), Recent Activity Feed (last 10 articles → CMS links), Trends Snapshot (top 3 active trends), System Alerts summary (last 3 unread + thermometer); full dark-mode support via `useTheme`
+- **Review worker stall detection** (2026-06-04): `review_worker.py` emits `logger.critical()` after 10 min of pending articles without processing; `log_analyzer.py` `review_worker_stalled` rule (critical, 10-min cooldown) converts this to an Alert
+- **Scraper service inactive-site guard** (2026-06-04): `scraper.py scrape_and_save()` checks `job.site.is_active` before any fetch/save — protects manual Run Now path; worker guard was already present
+- **OpenRouter integration** (2026-06-04): `config.py` + `.env` — `OPENROUTER_API_KEY`; `ai_review.py` — OpenRouter primary (`anthropic/claude-sonnet-4-5`), Anthropic direct fallback; `trends_service.py generate_site_config()` — same pattern + `log_api_call` telemetry; route guards in `trends.py` accept either key; `api_usage.py` — dynamic Claude card (OpenRouter vs Anthropic) with correct pricing
+- **DB indexes** (2026-06-04): `index=True` on `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`; migration `ac76c06893bc` committed — apply with `alembic upgrade head`
 - `pinned_until` timed pinning: nullable DateTime on Article; public API sorts pinned-until-active first; `PinModal` with 1d/1w/1m picker; expiry badge in CMS table
 - Reading time: `@property reading_time_minutes`; shown on all ArticleCard variants and ArticleDetail
 - TemplateB v2: sticky header; hero ≥60vh; `InfiniteFeed` for "More Stories"; `RelatedArticles` component; `Footer` component
@@ -523,11 +527,11 @@ All cost data is tracked in `api_usage_log` table and visible at `/admin/api-usa
 
 Priority order for upcoming sessions:
 
-0. **Alert system verification** — run `alembic upgrade head` (migration `e2f3a4b5c6d7`), restart backend, open admin → click thermometer → `POST /admin/alerts/test` → confirm bell badge, dropdown, and Alerts page all update; delete test alert via "Delete all" in bell dropdown.
+0. ~~**Alert system verification**~~ ✅ Done — alert model, routes, worker, and log_analyzer all committed; `alembic upgrade head` for migration `e2f3a4b5c6d7` still needed if starting fresh.
 
 1. ~~**Bulk actions in CMS**~~ ✅ Done — `PATCH /cms/articles/bulk` (publish/remove/reassign-category); sticky bulk toolbar in Articles.jsx with Publish/Remove/Assign Category/Clear; toast feedback.
 
-2. **DB indexes** — `alembic revision --autogenerate -m "add db indexes"` then manually add: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`. (REVIEW.md R4)
+2. ~~**DB indexes**~~ ✅ Committed — `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at` via migration `ac76c06893bc`. **Run `alembic upgrade head` before next backend start.**
 
 3. **API Usage dashboard — data population** — `api_usage_log` table is empty until new API calls are made. Run a scrape job or trigger AI review to populate data.
 
@@ -613,29 +617,26 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 | Feature | Files changed | Status |
 |---------|--------------|--------|
-| Logo topic fix v1 — prefer ASCII keywords over Hebrew/RTL | `backend/app/services/logo_service.py` — `_build_topic()` filters for ASCII-containing keywords first; falls back to raw `[:2]` when none exist | ✅ Done |
-| Logo topic fix v2 — score-rank ASCII keywords | `backend/app/services/logo_service.py` — `_score_keyword()` (+3 `str.isascii()`, +2 length 3–20, +1 `_STRONG_BRAND_TERMS`); site 9 now sends `world cup, fifa` to Stability AI | ✅ Done |
-| Logos regenerated for sites 8 & 9 | `POST /sites/8/regenerate-logo` + `POST /sites/9/regenerate-logo` — both returned AI PNG | ✅ Done |
-| Scrape worker inactive-site guard | `backend/app/workers/scrape_worker.py` — `_run_due_jobs()` checks `job.site.is_active` before `scrape_and_save()`; skips with INFO log, job status unchanged | ✅ Done |
-| Architecture.jsx scrape_worker description | `frontend/src/apps/admin/Architecture.jsx` — corrected stale tooltip; added inactive-site skip note | ✅ Done |
-| Admin Dashboard v2 | `frontend/src/apps/admin/Dashboard.jsx` — full rewrite: 7 sections (Health Bar, Pipeline, AI Quality, Scrape Activity, Recent Feed, Trends Snapshot, Alerts) | ✅ Done |
-| Default images ASCII filter | `backend/app/routes/sites/sites.py` — `get_site_default_images` and `fill_site_default_images` now filter keywords to ASCII-only before Unsplash queries; all 9 sites regenerated | ✅ Done |
-| Platform GitHub remote fix | Created `pappatch/content-platform-saas` repo; updated `origin` to new remote; pushed `main` + `platform` branches | ✅ Done |
-| Default images deduplication + variety | `backend/app/routes/sites/sites.py` — added `_VARIETY_SUFFIXES` + `_build_image_queries()` helper; GET/FILL endpoints use distinct queries per slot + `excluded_urls` to prevent duplicates; DELETE endpoint now applies ASCII filter + `excluded_urls` on auto-fill; all 9 sites regenerated (5 unique images each) | ✅ Done |
-| site-renderer proxy port fix | `site-renderer/vite.config.js` — `/public` proxy corrected from `8000` → `8001` (platform port) | ✅ Done |
+| Review worker stall detection | `backend/app/workers/review_worker.py` — `_worker_start_ts` + `_last_processed_ts` monotonic timestamps; `logger.critical()` fires if pending articles exist but none processed in ≥10 min. `backend/app/services/log_analyzer.py` — `review_worker_stalled` rule (critical, 10-min cooldown) picks up the log and creates an Alert | ✅ Done |
+| Scraper service inactive-site guard | `backend/app/services/scraper.py` — `scrape_and_save()` now checks `job.site.is_active` before any fetch or DB write; returns with INFO log "SKIP — site {id} inactive". Protects manual Run Now path (worker guard was already added in a prior session) | ✅ Done |
+| OpenRouter integration — AI review | `backend/app/config.py` — `openrouter_api_key: Optional[str]`; `backend/.env` — `OPENROUTER_API_KEY` added. `backend/app/services/ai_review.py` — OpenRouter as primary provider (`anthropic/claude-sonnet-4-5`, `base_url="https://openrouter.ai/api"`), Anthropic direct as fallback; entry guard accepts either key; `log_api_call` on all error paths | ✅ Done |
+| OpenRouter migration — trends + route guards | `backend/app/services/trends_service.py` — `generate_site_config()` same OpenRouter/Anthropic pattern + `log_api_call` success + error telemetry (was missing entirely). `backend/app/routes/trends.py` — both AI route guards fixed to accept `openrouter_api_key OR anthropic_api_key` (were returning 503 with only OpenRouter key set) | ✅ Done |
+| API Usage dashboard — OpenRouter card | `backend/app/routes/admin/api_usage.py` — `_anthropic_stats()` → `_claude_stats()`: shows "OpenRouter (Claude Sonnet 4.5)" at $3/$15 per 1M tokens when OpenRouter is active; falls back to "Anthropic (Claude Haiku)" at $0.25/$1.25 when only Anthropic key set; `configured` badge reflects either key | ✅ Done |
+| DB indexes — models + migration | `backend/app/models/article.py` — `index=True` on `status`, `site_id`. `backend/app/models/analytics.py` — `index=True` on `site_id`, `created_at`. Migration `ac76c06893bc` generated and committed — **run `alembic upgrade head` before next backend start** | ✅ Committed, needs `upgrade head` |
+| `.vite/` added to .gitignore | `.gitignore` — Vite build cache directory excluded | ✅ Done |
 
 ### Current known issues / state (when resuming)
 
+- **DB indexes migration pending** — `alembic upgrade head` for migration `ac76c06893bc` has NOT been run yet; run it before starting the backend or it will error on fresh DBs.
+- **OpenRouter not live-tested end-to-end** — `_call_rewrite_api` and `generate_site_config()` both verified with isolated Python tests; full article review cycle (scrape → pending → AI review → published) not run with OpenRouter yet.
 - **Dashboard.jsx not yet live-tested in browser** — code-complete but visual QA needed (dark mode, empty states, Run Now button).
-- **Alert system migration pending** — `alembic upgrade head` for migration `e2f3a4b5c6d7` (alerts table) not yet confirmed run; backend restart needed for `alert_worker` to start.
-- **API Usage dashboard shows zeros** — `api_usage_log` empty until new API calls are made; run a scrape job or trigger AI review.
-- **DB indexes not added** — see REVIEW.md R4: `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at`.
+- **API Usage dashboard shows zeros** — `api_usage_log` empty until new API calls are made; run a scrape job or trigger AI review to populate.
 - **Hook enforcement is manual** — `.claude/hooks/` are instruction docs, not shell hooks. See REVIEW.md R19.
 
 ### Exact next steps when resuming this project
 
-1. `cd frontend && npm run dev` → open `http://localhost:5173/admin` → verify all 7 Dashboard sections in light + dark mode; test "Run Now" on a scrape job
-2. `cd backend && source .venv/bin/activate && alembic upgrade head` → restart backend → `POST /admin/alerts/test` → confirm full alert UI flow → delete test alert
-3. `alembic revision --autogenerate -m "add db indexes"` → manually add indexes for `articles.status`, `articles.site_id`, `analytics.site_id`, `analytics.created_at` → commit migration
-4. Run a scrape job → verify `/admin/api-usage` shows live spend data
+1. `cd backend && source .venv/bin/activate && alembic upgrade head` — applies DB indexes migration `ac76c06893bc`; required before backend restart
+2. Restart backend → run one scrape job → watch review worker process an article → confirm `/admin/api-usage` shows `openrouter` calls with real token counts
+3. `cd frontend && npm run dev` → open `http://localhost:5173/admin` → verify all 7 Dashboard sections in light + dark mode; test "Run Now" on a scrape job
+4. `POST /admin/alerts/test` → confirm alert bell + thermometer UI flow → delete test alert
 5. At end of each session, invoke `/session-handoff` to keep this summary current
