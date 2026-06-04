@@ -609,8 +609,13 @@ async def explore_keyword(keyword: str, timeframe: str, geo: str) -> dict:
 # Claude model config
 # ---------------------------------------------------------------------------
 
-MODEL = "claude-haiku-4-5-20251001"
+_ANTHROPIC_MODEL    = "claude-haiku-4-5-20251001"
+_OPENROUTER_MODEL   = "anthropic/claude-sonnet-4-5"
+_OPENROUTER_BASE_URL = "https://openrouter.ai/api"  # SDK appends /v1/messages
 MAX_TOKENS = 1024
+
+# Kept for callers that reference MODULE.MODEL directly
+MODEL = _ANTHROPIC_MODEL
 
 _SITE_CONFIG_TOOL = {
     "name": "generate_site_config",
@@ -996,8 +1001,20 @@ async def generate_site_config(keyword: str, language: str) -> SiteConfigPreview
         ValueError: if no API key is configured.
         anthropic.APIError subclasses: on API failures (caller handles).
     """
-    if not settings.anthropic_api_key:
-        raise ValueError("ANTHROPIC_API_KEY not configured — cannot generate site config")
+    if not settings.openrouter_api_key and not settings.anthropic_api_key:
+        raise ValueError("No AI API key configured — set OPENROUTER_API_KEY or ANTHROPIC_API_KEY")
+
+    if settings.openrouter_api_key:
+        client        = anthropic.AsyncAnthropic(
+            api_key=settings.openrouter_api_key,
+            base_url=_OPENROUTER_BASE_URL,
+        )
+        active_model    = _OPENROUTER_MODEL
+        provider_label  = "openrouter"
+    else:
+        client        = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        active_model    = _ANTHROPIC_MODEL
+        provider_label  = "anthropic"
 
     lang_names = {"en": "English", "he": "Hebrew", "ar": "Arabic", "fr": "French"}
     lang_name = lang_names.get(language, "English")
@@ -1014,28 +1031,39 @@ async def generate_site_config(keyword: str, language: str) -> SiteConfigPreview
         "Call generate_site_config with the result."
     )
 
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-
     try:
         response = await client.messages.create(
-            model=MODEL,
+            model=active_model,
             max_tokens=MAX_TOKENS,
             tools=[_SITE_CONFIG_TOOL],
             tool_choice={"type": "tool", "name": "generate_site_config"},
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.AuthenticationError:
-        logger.error("Anthropic API: authentication failed — check ANTHROPIC_API_KEY")
+        logger.error("%s API: authentication failed — check API key", provider_label)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model})
         raise
     except anthropic.RateLimitError:
-        logger.warning("Anthropic API: rate limit hit in generate_site_config")
+        logger.warning("%s API: rate limit hit in generate_site_config", provider_label)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model, "reason": "rate_limit"})
         raise
     except anthropic.APIStatusError as exc:
-        logger.error("Anthropic API error %d: %s", exc.status_code, exc.message)
+        logger.error("%s API error %d: %s", provider_label, exc.status_code, exc.message)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model, "status_code": exc.status_code})
         raise
     except anthropic.APIConnectionError:
-        logger.error("Anthropic API: connection error in generate_site_config")
+        logger.error("%s API: connection error in generate_site_config", provider_label)
+        log_api_call(provider_label, "messages_create", success=False, meta={"model": active_model, "reason": "connection_error"})
         raise
+
+    log_api_call(
+        provider_label, "messages_create", success=True,
+        meta={
+            "model":         active_model,
+            "input_tokens":  response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        },
+    )
 
     for block in response.content:
         if block.type == "tool_use" and block.name == "generate_site_config":

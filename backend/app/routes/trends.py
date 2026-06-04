@@ -346,10 +346,10 @@ async def get_explore_site_config(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="language must be one of: en, fr, he, ar",
         )
-    if not settings.anthropic_api_key:
+    if not settings.openrouter_api_key and not settings.anthropic_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="ANTHROPIC_API_KEY not configured",
+            detail="No AI API key configured (set OPENROUTER_API_KEY or ANTHROPIC_API_KEY)",
         )
 
     from app.services.trends_service import _sanitize_keyword
@@ -475,10 +475,10 @@ async def get_site_config_preview(
     if not trend:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Trend not found")
 
-    if not settings.anthropic_api_key:
+    if not settings.openrouter_api_key and not settings.anthropic_api_key:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="ANTHROPIC_API_KEY not configured",
+            detail="No AI API key configured (set OPENROUTER_API_KEY or ANTHROPIC_API_KEY)",
         )
 
     try:

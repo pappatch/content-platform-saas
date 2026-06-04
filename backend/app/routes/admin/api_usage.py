@@ -10,12 +10,13 @@ Returns per-service stats aggregated from:
 
 Cost models (USD)
 -----------------
-  Anthropic Haiku  : $0.25 / 1M input tokens, $1.25 / 1M output tokens
-  Stability AI     : $0.04 / image at 1536×640 (≈ 1 credit per image)
-  Tavily           : $0.004 / search call (estimated — no published price)
-  Google CSE       : free tier 100 req/day; $5 / 1000 thereafter
-  Unsplash         : free demo key, 50 req/hour rate limit
-  Google Trends    : free, no API key required
+  OpenRouter Sonnet 4.5 : $3.00 / 1M input tokens, $15.00 / 1M output tokens
+  Anthropic Haiku 4.5   : $0.25 / 1M input tokens,  $1.25 / 1M output tokens (fallback)
+  Stability AI          : $0.04 / image at 1536×640 (≈ 1 credit per image)
+  Tavily                : $0.004 / search call (estimated — no published price)
+  Google CSE            : free tier 100 req/day; $5 / 1000 thereafter
+  Unsplash              : free demo key, 50 req/hour rate limit
+  Google Trends         : free, no API key required
 """
 
 import asyncio
@@ -43,8 +44,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # Cost / quota constants
 # ---------------------------------------------------------------------------
 
-_ANTHROPIC_INPUT_COST_PER_M  = 0.25    # $ / 1M input tokens  (Haiku 4.5)
-_ANTHROPIC_OUTPUT_COST_PER_M = 1.25    # $ / 1M output tokens (Haiku 4.5)
+_ANTHROPIC_INPUT_COST_PER_M   = 0.25   # $ / 1M input tokens  (Haiku 4.5 direct)
+_ANTHROPIC_OUTPUT_COST_PER_M  = 1.25  # $ / 1M output tokens (Haiku 4.5 direct)
+_OPENROUTER_INPUT_COST_PER_M  = 3.00  # $ / 1M input tokens  (Sonnet 4.5 via OpenRouter)
+_OPENROUTER_OUTPUT_COST_PER_M = 15.00 # $ / 1M output tokens (Sonnet 4.5 via OpenRouter)
 _STABILITY_COST_PER_IMAGE    = 0.04    # $ / 1536×640 SDXL image  (≈ 1 credit)
 _TAVILY_COST_PER_SEARCH      = 0.004   # $ / search (estimated)
 _GOOGLE_CSE_FREE_DAILY       = 100     # free-tier daily query cap
@@ -120,15 +123,27 @@ def _sparkline(db: Session, service: str, now: datetime) -> list[dict]:
 # Per-service aggregators
 # ---------------------------------------------------------------------------
 
-async def _anthropic_stats(db: Session, now: datetime) -> dict:
-    month_start = _start_of_month(now)
-    calls_today, calls_month = _db_counts(db, "anthropic", now)
+async def _claude_stats(db: Session, now: datetime) -> dict:
+    """
+    Single card for all Claude AI usage.
 
-    # Sum tokens stored in meta JSON for this month
+    When OPENROUTER_API_KEY is set (primary), reads from service='openrouter'
+    and uses Sonnet 4.5 pricing.  Falls back to service='anthropic' (Haiku)
+    when only ANTHROPIC_API_KEY is configured.
+    """
+    use_openrouter = bool(settings.openrouter_api_key)
+    service_key    = "openrouter" if use_openrouter else "anthropic"
+    display_name   = "OpenRouter (Claude Sonnet 4.5)" if use_openrouter else "Anthropic (Claude Haiku)"
+    input_cost     = _OPENROUTER_INPUT_COST_PER_M  if use_openrouter else _ANTHROPIC_INPUT_COST_PER_M
+    output_cost    = _OPENROUTER_OUTPUT_COST_PER_M if use_openrouter else _ANTHROPIC_OUTPUT_COST_PER_M
+
+    month_start = _start_of_month(now)
+    calls_today, calls_month = _db_counts(db, service_key, now)
+
     rows = (
         db.query(ApiUsageLog.meta)
         .filter(
-            ApiUsageLog.service   == "anthropic",
+            ApiUsageLog.service   == service_key,
             ApiUsageLog.timestamp >= month_start,
             ApiUsageLog.success   == True,  # noqa: E712
         )
@@ -145,14 +160,14 @@ async def _anthropic_stats(db: Session, now: datetime) -> dict:
                 pass
 
     cost_month = round(
-        input_tokens  / 1_000_000 * _ANTHROPIC_INPUT_COST_PER_M
-        + output_tokens / 1_000_000 * _ANTHROPIC_OUTPUT_COST_PER_M,
+        input_tokens  / 1_000_000 * input_cost
+        + output_tokens / 1_000_000 * output_cost,
         4,
     )
-    configured = bool(settings.anthropic_api_key)
+    configured = bool(settings.openrouter_api_key or settings.anthropic_api_key)
     return {
-        "id":                   "anthropic",
-        "name":                 "Anthropic (Claude Haiku)",
+        "id":                   service_key,
+        "name":                 display_name,
         "configured":           configured,
         "status":               "ok" if configured else "error",
         "calls_today":          calls_today,
@@ -162,7 +177,7 @@ async def _anthropic_stats(db: Session, now: datetime) -> dict:
         "credits_remaining":    None,
         "input_tokens_month":   input_tokens,
         "output_tokens_month":  output_tokens,
-        "sparkline":            _sparkline(db, "anthropic", now),
+        "sparkline":            _sparkline(db, service_key, now),
     }
 
 
@@ -335,7 +350,7 @@ async def get_api_usage(
     now = datetime.now(timezone.utc)
 
     services = await asyncio.gather(
-        _anthropic_stats(db, now),
+        _claude_stats(db, now),
         _stability_stats(db, now),
         _unsplash_stats(db, now),
         _tavily_stats(db, now),
