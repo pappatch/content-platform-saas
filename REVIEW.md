@@ -1087,3 +1087,27 @@ app.* loggers
 - Smoke-test confirmed: all 7 current non-running jobs have `is_active=True`; zero skips in production right now; guard fires when any site is set inactive ✅
 
 ### No new findings — all items clean.
+
+---
+
+## Audit — 2026-06-04 (Default images: filter non-ASCII keywords before Unsplash)
+
+### Changes reviewed
+- `backend/app/routes/sites/sites.py` — `get_site_default_images()` and `fill_site_default_images()` only
+
+### Security review
+- No new routes, no auth changes ✅
+- No new env vars, no new models, no migrations ✅
+- No secrets in code ✅
+- No new external API calls; change only affects which query string is sent to Unsplash ✅
+
+### Code quality
+- **Root cause**: both `GET /{id}/default-images` and `POST /{id}/default-images/fill` passed raw keywords (site.name, default_category_names, scrape-job keywords) straight to Unsplash; for Hebrew/Arabic sites these were non-Latin tokens that Unsplash ignores, returning unrelated images ✅
+- **Fix pattern**: same as `logo_service._build_topic` — `re.search(r"[a-zA-Z]", k)` filter after keyword list is built, fallback to original list if no ASCII keywords found ✅
+- `re` was already imported at line 19 — no new import added ✅
+- Fallback path unchanged: if ASCII filter produces empty list (pure-CJK or pure-RTL site with no ASCII at all), original keywords are kept — no regression for edge cases ✅
+- `_ascii_kws` (GET) and `_ascii_kws_fill` (POST fill) use distinct variable names to avoid shadowing ✅
+- All 9 active sites regenerated via `GET /sites/{id}/default-images`; site 8 (מגי טביבי, Hebrew) now returns proper Unsplash photos instead of unrelated fallbacks ✅
+- No unused imports, no hardcoded values ✅
+
+### No new findings — all items clean.

@@ -439,6 +439,12 @@ async def get_site_default_images(
     if not keywords:
         keywords = ["news", "world", "people", "nature", "city"]
 
+    # Filter to ASCII-only keywords — non-ASCII text (Hebrew, Arabic, etc.) is
+    # ignored by Unsplash and returns unrelated images for non-Latin-script sites.
+    _ascii_kws = [k for k in keywords if re.search(r"[a-zA-Z]", k)]
+    if _ascii_kws:
+        keywords = _ascii_kws
+
     # Fetch N validated images (one per keyword + "professional photography" suffix).
     # N = default_images_per_site platform setting (default 5).
     # Negative synthetic IDs used for logging only — won't collide with real article IDs.
@@ -540,6 +546,11 @@ async def fill_site_default_images(
                 seen.add(kn); keywords.append(kn)
     if not keywords:
         keywords = ["news", "world", "people", "nature", "city"]
+
+    # Filter to ASCII-only keywords — non-ASCII text is ignored by Unsplash.
+    _ascii_kws_fill = [k for k in keywords if re.search(r"[a-zA-Z]", k)]
+    if _ascii_kws_fill:
+        keywords = _ascii_kws_fill
 
     from app.services.image_service import enrich_article_images
     from app.services.image_validator import is_valid_image_url

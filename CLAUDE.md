@@ -604,7 +604,7 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 
 ## Last Session Summary
 
-**Date:** 2026-06-03 — **PROJECT PAUSED** — new project WorldCup2026 starting
+**Date:** 2026-06-04
 
 ### What was built this session
 
@@ -614,8 +614,9 @@ Full audit conducted by Claude Code (claude-sonnet-4-6). See `REVIEW.md` for com
 | Logo topic fix v2 — score-rank ASCII keywords | `backend/app/services/logo_service.py` — `_score_keyword()` (+3 `str.isascii()`, +2 length 3–20, +1 `_STRONG_BRAND_TERMS`); site 9 now sends `world cup, fifa` to Stability AI | ✅ Done |
 | Logos regenerated for sites 8 & 9 | `POST /sites/8/regenerate-logo` + `POST /sites/9/regenerate-logo` — both returned AI PNG | ✅ Done |
 | Scrape worker inactive-site guard | `backend/app/workers/scrape_worker.py` — `_run_due_jobs()` checks `job.site.is_active` before `scrape_and_save()`; skips with INFO log, job status unchanged | ✅ Done |
-| Architecture.jsx scrape_worker description | `frontend/src/apps/admin/Architecture.jsx` — corrected stale tooltip (wrong fn name, wrong due-check predicate); added inactive-site skip note | ✅ Done |
-| Admin Dashboard v2 | `frontend/src/apps/admin/Dashboard.jsx` — full rewrite: 7 sections (Health Bar, Pipeline, AI Quality, Scrape Activity, Recent Feed, Trends Snapshot, Alerts); dark mode; inline Run Now for jobs | ✅ Done |
+| Architecture.jsx scrape_worker description | `frontend/src/apps/admin/Architecture.jsx` — corrected stale tooltip; added inactive-site skip note | ✅ Done |
+| Admin Dashboard v2 | `frontend/src/apps/admin/Dashboard.jsx` — full rewrite: 7 sections (Health Bar, Pipeline, AI Quality, Scrape Activity, Recent Feed, Trends Snapshot, Alerts) | ✅ Done |
+| Default images ASCII filter | `backend/app/routes/sites/sites.py` — `get_site_default_images` and `fill_site_default_images` now filter keywords to ASCII-only before Unsplash queries; all 9 sites regenerated | ✅ Done |
 
 ### Current known issues / state (when resuming)
 
