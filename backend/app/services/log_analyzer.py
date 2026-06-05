@@ -87,6 +87,15 @@ ALERT_RULES: list[dict] = [
     # DB-based rules — check application state directly
     # ------------------------------------------------------------------
     {
+        "id":               "review_worker_stalled",
+        "check":            "db",
+        "level":            "critical",
+        "title":            "Review worker stalled",
+        "message_template": "{count} article(s) have been pending for over 15 minutes. The AI review worker may be stalled or the OpenRouter/Anthropic API may be unavailable. Check backend logs.",
+        "source":           "ai_review",
+        "cooldown_minutes": 10,
+    },
+    {
         "id":               "articles_stuck_pending",
         "check":            "db",
         "level":            "warning",
@@ -157,17 +166,6 @@ ALERT_RULES: list[dict] = [
     # (e.g. DB itself being down; kept as last resort)
     # ------------------------------------------------------------------
     {
-        "id":               "review_worker_stalled",
-        "check":            "log",
-        "pattern":          r"Review worker stalled:",
-        "level":            "critical",
-        "title":            "Review worker stalled",
-        "message_template": "The review worker has not processed any article in 10+ minutes despite pending articles existing. AI review is stalled — check the Anthropic API key, account status, and backend logs.",
-        "source":           "ai_review",
-        "cooldown_minutes": 10,
-        "min_matches":      1,
-    },
-    {
         "id":               "db_connection_error",
         "check":            "log",
         "pattern":          r"OperationalError|database is locked|sqlite3\.OperationalError|DB connection",
@@ -229,6 +227,31 @@ def _mark_alerted(rule_id: str) -> None:
 # ---------------------------------------------------------------------------
 # DB check functions
 # ---------------------------------------------------------------------------
+
+def _check_review_worker_stalled(db) -> int:
+    """Return count of articles stuck in 'pending' for >15 minutes.
+
+    Only counts articles older than 15 minutes so newly-scraped articles
+    that haven't had time to be reviewed yet don't trigger a false positive.
+    Threshold of 3 is required before firing (see analyze_logs).
+    """
+    try:
+        from app.models.article import Article, ArticleStatus
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=15)
+        # SQLite stores naive UTC datetimes; compare without tzinfo
+        cutoff_naive = cutoff.replace(tzinfo=None)
+        return (
+            db.query(Article)
+            .filter(
+                Article.status     == ArticleStatus.pending,
+                Article.created_at <= cutoff_naive,
+            )
+            .count()
+        )
+    except Exception:
+        logger.exception("log_analyzer: error in _check_review_worker_stalled")
+        return 0
+
 
 def _check_articles_stuck_pending(db) -> int:
     """Return count of articles stuck in 'pending' for >30 minutes."""
@@ -325,7 +348,10 @@ def analyze_logs(db) -> list[dict]:
         count     = 0
 
         if check_type == "db":
-            if rule_id == "articles_stuck_pending":
+            if rule_id == "review_worker_stalled":
+                count     = _check_review_worker_stalled(db)
+                triggered = count >= 3
+            elif rule_id == "articles_stuck_pending":
                 count     = _check_articles_stuck_pending(db)
                 triggered = count >= 5
             elif rule_id == "scrape_job_failed":
